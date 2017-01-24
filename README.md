@@ -52,7 +52,7 @@ ip, modify /etc/host, or know anything other than its aws instance id:
 
 ```bash
 (aws)/: ssh {instance-id}
-/usr/bin/ssh {instance's first private ip}
+/usr/bin/ssh {first private ip}
 Last login: {sometime} from {somewhere}
 
        __|  __|_  )
@@ -76,7 +76,7 @@ AutoScaling Group:{name}
   1 Healthy az-2b {instance-id}
   2 Healthy az-2c {instance-id}
 (aws)/stack:{stack}/stack:{substack}/asg:{asg}/: ssh 2
-/usr/bin/ssh {instance 2's first private ip}
+/usr/bin/ssh {first private ip}
 Last login: {sometime} from {somewhere}
 
        __|  __|_  )
