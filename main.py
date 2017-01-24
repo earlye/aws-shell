@@ -113,8 +113,8 @@ class AwsProcessor(cmd.Cmd):
     def do_ssh(self,args):
         """SSH to an instance. ssh -h for detailed help."""
         parser = CommandArgumentParser()
-        parser.add_argument('-i','--instance-id',dest='instance-id',help='instance id of the instance to ssh to');
-        parser.add_argument('-a','--interface-number',dest='interface-number',help='instance id of the instance to ssh to');
+        parser.add_argument(dest='instance-id',nargs='?',help='instance id of the instance to ssh to');
+        parser.add_argument('-a','--interface-number',dest='interface-number',default='0',help='instance id of the instance to ssh to');
         args = vars(parser.parse_args(shlex.split(args)))
 
         instanceId = args['instance-id']
