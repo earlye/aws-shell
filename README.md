@@ -96,6 +96,20 @@ Last login: {sometime} from {somewhere}
 https://aws.amazon.com/amazon-linux-ami/2016.09-release-notes/
 ```
 
+It also supports port forwarding!
+
+```bash
+(aws)/stack:{stack}/stack:{substack}/asg:{asg}/: ssh 2 -L 8888:localhost:8888
+/usr/bin/ssh {first private ip}
+Last login: {sometime} from {somewhere}
+
+       __|  __|_  )
+       _|  (     /   Amazon Linux AMI
+      ___|\___|___|
+
+https://aws.amazon.com/amazon-linux-ami/2016.09-release-notes/
+```
+
 So how do you set up your `~/.ssh/config` for this? I don't really
 profess to be an expert, but here's the magic from mine, modified
 to protect my account, of course:

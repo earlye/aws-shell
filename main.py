@@ -87,8 +87,12 @@ class AwsProcessor(cmd.Cmd):
     def stackResource(self,stackName,logicalId):
         print "loading stack resource {}.{}".format(stackName,logicalId)
         stackResource = cfResource.StackResource(stackName,logicalId)
+        pprint(stackResource)
         if "AWS::CloudFormation::Stack" == stackResource.resource_type:
+            pprint(stackResource)
+            print "Found a stack w/ physical id:{}".format(stackResource.physical_resource_id)
             childStack = cfResource.Stack(stackResource.physical_resource_id)
+            print "Creating prompt"
             AwsStack(childStack,logicalId,self).cmdloop()
         elif "AWS::AutoScaling::AutoScalingGroup" == stackResource.resource_type:
             scalingGroup = stackResource.physical_resource_id
@@ -105,7 +109,7 @@ class AwsProcessor(cmd.Cmd):
             print("- resource_type:{}".format(stackResource.resource_type))
             print("- stack_id:{}".format(stackResource.stack_id))
 
-    def ssh(self,instanceId,interfaceNumber):
+    def ssh(self,instanceId,interfaceNumber,forwarding):
         client = boto3.client('ec2')
         response = client.describe_instances(InstanceIds=[instanceId])
         networkInterfaces = response['Reservations'][0]['Instances'][0]['NetworkInterfaces'];
@@ -117,6 +121,9 @@ class AwsProcessor(cmd.Cmd):
         else:
             address = "{}".format(networkInterfaces[interfaceNumber]['PrivateIpAddress'])
             args=["/usr/bin/ssh",address]
+            if not forwarding == None:
+                for forwardInfo in forwarding:
+                    args.extend(["-L",forwardInfo])
             print " ".join(args)
             pid = os.fork()
             if pid == 0:
@@ -128,13 +135,15 @@ class AwsProcessor(cmd.Cmd):
     def do_ssh(self,args):
         """SSH to an instance. ssh -h for detailed help."""
         parser = CommandArgumentParser()
-        parser.add_argument(dest='instance-id',nargs='?',help='instance id of the instance to ssh to');
-        parser.add_argument('-a','--interface-number',dest='interface-number',default='0',help='instance id of the instance to ssh to');
+        parser.add_argument(dest='instance-id',nargs='?',help='instance id of the instance to ssh to')
+        parser.add_argument('-a','--interface-number',dest='interface-number',default='0',help='instance id of the instance to ssh to')
+        parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string of the form: {localport}:{host-visible-to-instance}:{remoteport}")
         args = vars(parser.parse_args(shlex.split(args)))
 
         instanceId = args['instance-id']
         interfaceNumber = int(args['interface-number'])
-        self.ssh(instanceId,interfaceNumber)
+        forwarding = args['forwarding']                            
+        self.ssh(instanceId,interfaceNumber, forwarding)
 
 class AwsAutoScalingGroup(AwsProcessor):
     def __init__(self,scalingGroup,parent):
@@ -174,16 +183,18 @@ class AwsAutoScalingGroup(AwsProcessor):
         parser = CommandArgumentParser("stack")
         parser.add_argument(dest='instance',nargs='?',help='instance index or name');
         parser.add_argument('-a','--address-number',default='0',dest='interface-number',help='instance id of the instance to ssh to');
+        parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string of the form: {localport}:{host-visible-to-instance}:{remoteport}")
         args = vars(parser.parse_args(shlex.split(args)))
 
         interfaceNumber = int(args['interface-number'])
+        forwarding = args['forwarding']                            
         try:
             index = int(args['instance'])
             instances = self.scalingGroupDescription['AutoScalingGroups'][0]['Instances']
             instance = instances[index]
-            self.ssh(instance['InstanceId'],interfaceNumber)
+            self.ssh(instance['InstanceId'],interfaceNumber,forwarding)
         except ValueError:
-            self.ssh(args['instance'],interfaceNumber)
+            self.ssh(args['instance'],interfaceNumber,forwarding)
 
         
         
@@ -238,6 +249,11 @@ class AwsStack(AwsProcessor):
             for index, resource in resources.items():
                 print "    {0:3d}: {1:30} {2:20} {3}".format(index,resource.logical_id,resource.resource_status,defaultify(resource.resource_status_reason,''))
 
+    def do_browse(self,args):
+        """Open the current stack in a browser."""
+        rawStack = self.wrappedStack['rawStack']
+        os.system("open -a \"Google Chrome\" https://us-west-2.console.aws.amazon.com/cloudformation/home?region=us-west-2#/stack/detail?stackId={}".format(rawStack.stack_id))
+                
     def do_refresh(self,args):
         """Refresh view of the current stack. refresh -h for detailed help"""
         self.wrappedStack = self.wrapStack(cfResource.Stack(self.wrappedStack['rawStack'].name))
@@ -285,7 +301,7 @@ class AwsStack(AwsProcessor):
 
         print "loading stack {}".format(args['stack'])
         try:
-            index = int(args['stack'])
+            index = int(args['stack'])            
             stackSummary = self.wrappedStack['resourcesByTypeIndex']['AWS::CloudFormation::Stack'][index]
         except ValueError:
             stackSummary = self.wrappedStack['resourcesByTypeName']['AWS::CloudFormation::Stack'][args['stack']]
