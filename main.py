@@ -13,11 +13,23 @@ from pprint import pprint
 
 cfResource = boto3.resource('cloudformation')
 cfClient = boto3.client('cloudformation')
-stackStatusFilter=['CREATE_COMPLETE','CREATE_IN_PROGRESS']
+stackStatusFilter=['CREATE_COMPLETE','CREATE_IN_PROGRESS','ROLLBACK_IN_PROGRESS','ROLLBACK_COMPLETE']
 
 resourceTypeAliases={ 'AWS::AutoScaling::AutoScalingGroup' : 'asg',
                       'AWS::CloudFormation::Stack' : 'stack' }
 
+def defaultify(value,default):
+    if None == value:
+        return default
+    else:
+        return value
+
+def defaultify_dictentry(dictionary,key,default):
+    if key in dictionary:
+        return defaultify(dictionary[key],default)
+    else:
+        return default
+    
 class SilentException(Exception):
     def __init__(self):
         Exception.__init__(self)
@@ -41,6 +53,9 @@ class AwsProcessor(cmd.Cmd):
         self.raw_prompt = prompt
         self.prompt = prompt + "/: "
         self.parent = parent
+
+    def emptyline(self):
+        pass
 
     def onecmd(self, line):
         try:
@@ -131,12 +146,27 @@ class AwsAutoScalingGroup(AwsProcessor):
         
     def do_printInstances(self,args):
         """Print the list of instances in this auto scaling group. printInstances -h for detailed help"""
+        parser = CommandArgumentParser("stack")
+        parser.add_argument('-a','--addresses',action='store_true',dest='addresses',help='list all ip addresses');
+        args = vars(parser.parse_args(shlex.split(args)))
+
+        client = boto3.client('ec2')
+        
         print "AutoScaling Group:{}".format(self.scalingGroup)
         print "=== Instances ==="
         instances = self.scalingGroupDescription['AutoScalingGroups'][0]['Instances']
+
         index = 0
         for instance in instances:
-            print "{0:3d} {1} {2} {3}".format(index,instance['HealthStatus'],instance['AvailabilityZone'],instance['InstanceId'])
+            print "* {0:3d} {1} {2} {3}".format(index,instance['HealthStatus'],instance['AvailabilityZone'],instance['InstanceId'])
+            if args['addresses']:
+                response = client.describe_instances(InstanceIds=[instance['InstanceId']])
+                networkInterfaces = response['Reservations'][0]['Instances'][0]['NetworkInterfaces']
+                number = 0
+                print "  Network Interfaces:"
+                for interface in networkInterfaces:
+                    print "    * {0:3d} {1}".format(number, interface['PrivateIpAddress'])
+                    number +=1                
             index += 1
 
     def do_ssh(self,args):
@@ -187,10 +217,12 @@ class AwsStack(AwsProcessor):
         
     def printStack(self,wrappedStack):
         """Prints the stack"""
-        print "Stack {}".format(wrappedStack['rawStack'].name)
-        pprint(wrappedStack)
+        rawStack = wrappedStack['rawStack']
+        print "==== Stack {} ====".format(rawStack.name)
+        # pprint(wrappedStack)
+        print "Status: {} {}".format(rawStack.stack_status,defaultify(rawStack.stack_status_reason,''))
 
-        print "== Recent Events"
+        print "== Recent Events:"
         count = 0
         for event in wrappedStack['rawStack'].events.all():
             pprint( event )
@@ -198,18 +230,26 @@ class AwsStack(AwsProcessor):
             if count > 5:
                 break;
 
-        print "== Resources"
+        print "== Resources:"
         for resourceType, resources in wrappedStack['resourcesByTypeIndex'].items():
             if resourceType in resourceTypeAliases:
                 resourceType = resourceTypeAliases[resourceType];
-            print "=> {}".format(resourceType)
+            print "  - {}".format(resourceType)            
             for index, resource in resources.items():
-                print "{0:3d}: {1}".format(index,resource.logical_id)
+                print "    {0:3d}: {1:30} {2:20} {3}".format(index,resource.logical_id,resource.resource_status,defaultify(resource.resource_status_reason,''))
 
+    def do_refresh(self,args):
+        """Refresh view of the current stack. refresh -h for detailed help"""
+        self.wrappedStack = self.wrapStack(cfResource.Stack(self.wrappedStack['rawStack'].name))
+        
     def do_print(self,args):
         """Print the current stack. print -h for detailed help"""
         parser = CommandArgumentParser("print")
+        parser.add_argument('-r','--refresh',dest='refresh',action='store_true',help='refresh view of the current stack')
         args = vars(parser.parse_args(shlex.split(args)))
+
+        if args['refresh']:
+            self.do_refresh('')
         self.printStack(self.wrappedStack)
         
     def do_resource(self,args):
@@ -271,7 +311,7 @@ class AwsRoot(AwsProcessor):
         except ValueError:
             stack = cfResource.Stack(args['stack'])
 
-        AwsStack(stack,stack.name,self).cmdloop()
+        AwsStack(stack,stack.name,self).cmdloop()    
 
     def do_delete_stack(self,args):
         """Delete specified stack. delete_stack -h for detailed help."""
@@ -331,7 +371,7 @@ class AwsRoot(AwsProcessor):
         self.stackList = stackSummariesByIndex
         if not args['silent']:
             for index,summary in stackSummariesByIndex.items():
-                print '{0:3d}: {1!s}'.format(summary['Index'],summary['StackName'])
+                print '{0:3d}: {2:20} {1:40} {3}'.format(summary['Index'],summary['StackName'],summary['StackStatus'],defaultify_dictentry(summary,'StackStatusReason',''))
         
     def do_stack_resource(self, args):
         """Use specified stack resource. stack_resource -h for detailed help."""

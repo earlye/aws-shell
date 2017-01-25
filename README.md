@@ -10,6 +10,16 @@ I'm actively using it for work, so it supports the things that
 I'm doing, rather than being an exhaustive system. I invite
 pull requests for missing features, bugfixes, etc.
 
+## WARNINGS
+
+This tool is incredibly immature. It WILL be changing considerably as
+long as I'm using it, because I will be viewing the things it does (or
+doesn't do), and the manner in which it does (or doesn't do) them as
+impediments to my workflow.
+
+It is not even "alpha" level code yet, so expect things to be broken
+or buggy. Also expect syntax to be in a fairly constant state of flux.
+
 ## Installation
 
 ```bash
