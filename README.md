@@ -28,7 +28,6 @@ pip install boto3
 git clone git@github.com:earlye/aws-shell.git
 cd aws-shell
 ln -s $(pwd)/aws-shell {some directory on your $PATH}
-gem install aws-mfa ## <-- if you use MFA for AWS
 ```
 
 ## Usage
@@ -37,12 +36,6 @@ gem install aws-mfa ## <-- if you use MFA for AWS
 # Configure aws credentials. Skip this if you've done it before.
 $ aws configure
 
-# Authenticate MFA. Skip this if you've done it recently or aren't using FMA
-$ aws-mfa
-Enter the 6-digit code from your MFA device:
-{6-digit code}
-$ eval $(aws-mfa)
-
 # Run aws shell
 $ aws-shell
 (aws)/: help
@@ -50,6 +43,9 @@ $ aws-shell
 Documented commands (type help <topic>):
 ========================================
 delete_stack  exit  help  quit  ssh  stack  stack_resource  stacks  up
+
+# Provide MFA token:
+(aws)/: mfa 848034
 ```
 
 ## SSH support
@@ -127,3 +123,8 @@ Obviously, `{host-user}`, `{bastion-identity-path}`,
 have `{bastion-identity-path}` and `{host-identity-path}`
 swapped. Like I said, not an expert on ssh proxying.
 
+## Changes (Most Recent Last)
+
+* You can now input an MFA token by running `mfa {token}`. It's
+rudimentary support at this point, and likely broken if you've
+never used [aws-mfa](https://github.com/lonelyplanet/aws-mfa) before.
