@@ -4,19 +4,67 @@ import argparse
 import atexit
 import boto3
 import cmd
+import json
 import os
 import readline
 import shlex
+import subprocess
 import sys
 
+from run_cmd import run_cmd
 from pprint import pprint
 
-cfResource = boto3.resource('cloudformation')
-cfClient = boto3.client('cloudformation')
+class AwsConnectionFactory:    
+    def __init__(self,credentials=None):
+        self.setCredentials(credentials)
+
+    def setCredentials(self,credentials):
+        self.credentials = credentials
+        self.session = None
+
+    def getSession(self):
+        if self.session == None:
+            if self.credentials == None:
+                print("Getting session w/ credentials from env")
+                self.session = boto3.session.Session()
+            else:
+                print("Getting session w/ credentials:")
+                pprint(self.credentials)
+                self.session = boto3.session.Session(aws_access_key_id=self.credentials['AccessKeyId'],
+                                                     aws_secret_access_key=self.credentials['SecretAccessKey'],
+                                                     aws_session_token=self.credentials['SessionToken'])
+                print(self.session)
+        print "Session obtained"
+        return self.session
+
+    def getAsgClient(self):
+        return self.getSession().client('autoscaling')
+
+    def getAsgResource(self):
+        return self.getSession().resource('autoscaling')
+    
+    def getCfResource(self):
+        return self.getSession().resource('cloudformation')
+
+    def getCfClient(self):
+        return self.getSession().client('cloudformation')
+
+    def getEc2Client(self):
+        return self.getSession().client('ec2')
+
+    def getEc2Resource(self):
+        return self.getSession().resource('ec2')
+    
+awsConnectionFactory=AwsConnectionFactory();
+
 stackStatusFilter=['CREATE_COMPLETE','CREATE_IN_PROGRESS','ROLLBACK_IN_PROGRESS','ROLLBACK_COMPLETE']
 
 resourceTypeAliases={ 'AWS::AutoScaling::AutoScalingGroup' : 'asg',
                       'AWS::CloudFormation::Stack' : 'stack' }
+
+aws_config_dir = os.path.join(os.path.expanduser("~"), ".aws")
+
+mappedKeys = { 'SecretAccessKey' : 'AWS_SECRET_ACCESS_KEY', 'SessionToken': 'AWS_SECURITY_TOKEN', 'AccessKeyId' : 'AWS_ACCESS_KEY_ID' }
 
 def defaultify(value,default):
     if None == value:
@@ -29,7 +77,18 @@ def defaultify_dictentry(dictionary,key,default):
         return defaultify(dictionary[key],default)
     else:
         return default
-    
+
+def readfile(filename):
+    f = open(filename,'r')
+    s = f.read()
+    f.close()
+    return s
+
+def writefile(filename,contents):
+    f = open(filename,'w')
+    f.write(contents)
+    f.close()
+
 class SilentException(Exception):
     def __init__(self):
         Exception.__init__(self)
@@ -69,6 +128,36 @@ class AwsProcessor(cmd.Cmd):
         except:
             print "Unexpected error:", sys.exc_info()[0]
 
+    def load_arn(self,profile):
+        arn_file_name = 'mfa_device'
+        if not profile == 'default':
+            arn_file_name = "#{}_#{}".format(profile,arn_file_name)
+
+        arn_file = os.path.join(aws_config_dir, arn_file_name)
+
+        if os.access(arn_file,os.R_OK):
+            return readfile(arn_file)
+        else:
+            raise Exception("Sorry - I'm lazy and didn't port reading the MFA ARN from aws. Run aws-mfa first.")
+
+    def do_mfa(self, args):
+        """Enter a 6-digit MFA token. mfa -h for more details"""
+        parser = CommandArgumentParser("mfa")
+        parser.add_argument(dest='token',nargs='?',help='MFA token value');
+        parser.add_argument("-p","--profile",dest='profile',default='default',help='MFA token value');
+        args = vars(parser.parse_args(shlex.split(args)))
+
+        token = args['token']
+        profile = args['profile']
+        arn = self.load_arn(profile)
+
+        credentials_command = ["aws","--profile",profile,"--output","json","sts","get-session-token","--serial-number",arn,"--token-code",token]
+        output = run_cmd(credentials_command,echo=False) # Throws on non-zero exit :yey:
+
+        credentials = json.loads("\n".join(output.stdout))['Credentials']
+        pprint(credentials)
+        awsConnectionFactory.setCredentials(credentials)
+
     def do_up(self,args):
         """Go up one level"""
         if None == self.parent:
@@ -86,12 +175,12 @@ class AwsProcessor(cmd.Cmd):
 
     def stackResource(self,stackName,logicalId):
         print "loading stack resource {}.{}".format(stackName,logicalId)
-        stackResource = cfResource.StackResource(stackName,logicalId)
+        stackResource = awsConnectionFactory.getCfResource().StackResource(stackName,logicalId)
         pprint(stackResource)
         if "AWS::CloudFormation::Stack" == stackResource.resource_type:
             pprint(stackResource)
             print "Found a stack w/ physical id:{}".format(stackResource.physical_resource_id)
-            childStack = cfResource.Stack(stackResource.physical_resource_id)
+            childStack = awsConnectionFactory.getCfResource().Stack(stackResource.physical_resource_id)
             print "Creating prompt"
             AwsStack(childStack,logicalId,self).cmdloop()
         elif "AWS::AutoScaling::AutoScalingGroup" == stackResource.resource_type:
@@ -110,7 +199,7 @@ class AwsProcessor(cmd.Cmd):
             print("- stack_id:{}".format(stackResource.stack_id))
 
     def ssh(self,instanceId,interfaceNumber,forwarding):
-        client = boto3.client('ec2')
+        client = awsConnectionFactory.getEc2Client()
         response = client.describe_instances(InstanceIds=[instanceId])
         networkInterfaces = response['Reservations'][0]['Instances'][0]['NetworkInterfaces'];
         if None == interfaceNumber:
@@ -148,7 +237,7 @@ class AwsProcessor(cmd.Cmd):
 class AwsAutoScalingGroup(AwsProcessor):
     def __init__(self,scalingGroup,parent):
         AwsProcessor.__init__(self,parent.raw_prompt + "/asg:" + scalingGroup,parent)
-        self.client = boto3.client('autoscaling')
+        self.client = awsConnectionFactory.getAsgClient()
         self.scalingGroup = scalingGroup
         self.scalingGroupDescription = self.client.describe_auto_scaling_groups(AutoScalingGroupNames=[self.scalingGroup])
         self.do_printInstances('')
@@ -180,7 +269,7 @@ class AwsAutoScalingGroup(AwsProcessor):
 
     def do_ssh(self,args):
         """SSH to an instance. ssh -h for detailed help"""
-        parser = CommandArgumentParser("stack")
+        parser = CommandArgumentParser("ssh")
         parser.add_argument(dest='instance',nargs='?',help='instance index or name');
         parser.add_argument('-a','--address-number',default='0',dest='interface-number',help='instance id of the instance to ssh to');
         parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string of the form: {localport}:{host-visible-to-instance}:{remoteport}")
@@ -256,7 +345,7 @@ class AwsStack(AwsProcessor):
                 
     def do_refresh(self,args):
         """Refresh view of the current stack. refresh -h for detailed help"""
-        self.wrappedStack = self.wrapStack(cfResource.Stack(self.wrappedStack['rawStack'].name))
+        self.wrappedStack = self.wrapStack(awsConnectionFactory.getCfResource().Stack(self.wrappedStack['rawStack'].name))
         
     def do_print(self,args):
         """Print the current stack. print -h for detailed help"""
@@ -323,9 +412,9 @@ class AwsRoot(AwsProcessor):
             index = int(args['stack'])
             if self.stackList == None:
                 self.do_stacks('-s')
-            stack = cfResource.Stack(self.stackList[index]['StackName'])
+            stack = awsConnectionFactory.getCfResource().Stack(self.stackList[index]['StackName'])
         except ValueError:
-            stack = cfResource.Stack(args['stack'])
+            stack = awsConnectionFactory.getCfResource().Stack(args['stack'])
 
         AwsStack(stack,stack.name,self).cmdloop()    
 
@@ -339,9 +428,9 @@ class AwsRoot(AwsProcessor):
             index = int(args['stack'])
             if self.stackList == None:
                 self.do_stacks('-s')
-            stack = cfResource.Stack(self.stackList[index]['StackName'])
+            stack = awsConnectionFactory.getCfResource().Stack(self.stackList[index]['StackName'])
         except ValueError:
-            stack = cfResource.Stack(args['stack'])
+            stack = awsConnectionFactory.getCfResource().Stack(args['stack'])
 
         print "Here are the details of the stack you are about to delete:"
         print "Stack.name: {}".format(stack.name)
@@ -364,9 +453,9 @@ class AwsRoot(AwsProcessor):
         stackSummaries = []
         while not complete:
             if None == nextToken:
-                stacks = cfClient.list_stacks(StackStatusFilter=stackStatusFilter)
+                stacks = awsConnectionFactory.getCfClient().list_stacks(StackStatusFilter=stackStatusFilter)
             else:
-                stacks = cfClient.list_stacks(NextToken=nextToken,StackStatusFilter=stackStatusFilter)
+                stacks = awsConnectionFactory.getCfClient().list_stacks(NextToken=nextToken,StackStatusFilter=stackStatusFilter)
                 #pprint(stacks)
             if not 'NextToken' in stacks:
                 complete = True;
