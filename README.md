@@ -104,6 +104,8 @@ Last login: {sometime} from {somewhere}
       ___|\___|___|
 
 https://aws.amazon.com/amazon-linux-ami/2016.09-release-notes/
+$ exit
+(aws)/stack:{stack}/stack:{substack}/asg:{asg}/: ssh 2 -L 8888 # <-- useful shorthand!
 ```
 
 So how do you set up your `~/.ssh/config` for this? I don't really
@@ -128,3 +130,11 @@ swapped. Like I said, not an expert on ssh proxying.
 * You can now input an MFA token by running `mfa {token}`. It's
 rudimentary support at this point, and likely broken if you've
 never used [aws-mfa](https://github.com/lonelyplanet/aws-mfa) before.
+
+* You can now ssh with shorthanded port forwarding. Basically, if you
+want to forward a port on the remote server via the same local port,
+you no longer have to use the `-L {port}:localhost:{port}`
+syntax. Instead, just say `-L {port}`. You can still use the server as
+a tunnel to yet another server, or choose different local/remote port
+numbers with the old syntax though.
+

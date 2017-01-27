@@ -25,16 +25,16 @@ class AwsConnectionFactory:
     def getSession(self):
         if self.session == None:
             if self.credentials == None:
-                print("Getting session w/ credentials from env")
+                # print("Getting session w/ credentials from env")
                 self.session = boto3.session.Session()
             else:
-                print("Getting session w/ credentials:")
-                pprint(self.credentials)
+                # print("Getting session w/ credentials:")
+                # pprint(self.credentials)
                 self.session = boto3.session.Session(aws_access_key_id=self.credentials['AccessKeyId'],
                                                      aws_secret_access_key=self.credentials['SecretAccessKey'],
                                                      aws_session_token=self.credentials['SessionToken'])
-                print(self.session)
-        print "Session obtained"
+                # print(self.session)
+        # print "Session obtained"
         return self.session
 
     def getAsgClient(self):
@@ -78,6 +78,13 @@ def defaultify_dictentry(dictionary,key,default):
     else:
         return default
 
+def isInt(s):
+    try:
+        int(s)
+        return True
+    except ValueError:
+        return False
+
 def readfile(filename):
     f = open(filename,'r')
     s = f.read()
@@ -93,6 +100,10 @@ class SilentException(Exception):
     def __init__(self):
         Exception.__init__(self)
 
+class SlashException(Exception):
+    def __init__(self):
+        Exception.__init__(self)
+        
 class CommandArgumentParser(argparse.ArgumentParser):
     def __init__(self,command = None):
         argparse.ArgumentParser.__init__(self, prog=command)
@@ -121,6 +132,11 @@ class AwsProcessor(cmd.Cmd):
             return cmd.Cmd.onecmd(self,line)
         except SystemExit, e:
             raise e;
+        except SlashException, e:
+            if None == self.parent:
+                pass
+            else:
+                raise e
         except SilentException:
             pass
         except Exception, other:
@@ -164,6 +180,13 @@ class AwsProcessor(cmd.Cmd):
             print "You're at the root. Try 'quit' to quit"
         else:
             return True
+
+    def do_slash(self,args):
+        """Go up to root level"""
+        if None == self.parent:
+            print "You're at the root. Try 'quit' to quit"
+        else:
+            raise SlashException        
 
     def do_quit(self,args):
         """Alias for 'exit'"""
@@ -210,8 +233,10 @@ class AwsProcessor(cmd.Cmd):
         else:
             address = "{}".format(networkInterfaces[interfaceNumber]['PrivateIpAddress'])
             args=["/usr/bin/ssh",address]
-            if not forwarding == None:
+            if not forwarding == None:                
                 for forwardInfo in forwarding:
+                    if isInt(forwardInfo):
+                        forwardInfo = "{0}:localhost:{0}".format(forwardInfo)
                     args.extend(["-L",forwardInfo])
             print " ".join(args)
             pid = os.fork()
@@ -226,12 +251,12 @@ class AwsProcessor(cmd.Cmd):
         parser = CommandArgumentParser()
         parser.add_argument(dest='instance-id',help='instance id of the instance to ssh to')
         parser.add_argument('-a','--interface-number',dest='interface-number',default='0',help='instance id of the instance to ssh to')
-        parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string of the form: {localport}:{host-visible-to-instance}:{remoteport}")
+        parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string: {localport}:{host-visible-to-instance}:{remoteport} or {port}")
         args = vars(parser.parse_args(shlex.split(args)))
 
         instanceId = args['instance-id']
         interfaceNumber = int(args['interface-number'])
-        forwarding = args['forwarding']                            
+        forwarding = args['forwarding']
         self.ssh(instanceId,interfaceNumber, forwarding)
 
 class AwsAutoScalingGroup(AwsProcessor):
@@ -272,7 +297,7 @@ class AwsAutoScalingGroup(AwsProcessor):
         parser = CommandArgumentParser("ssh")
         parser.add_argument(dest='instance',help='instance index or name');
         parser.add_argument('-a','--address-number',default='0',dest='interface-number',help='instance id of the instance to ssh to');
-        parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string of the form: {localport}:{host-visible-to-instance}:{remoteport}")
+        parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string of the form: {localport}:{host-visible-to-instance}:{remoteport} or {port}")
         args = vars(parser.parse_args(shlex.split(args)))
 
         interfaceNumber = int(args['interface-number'])
@@ -315,28 +340,29 @@ class AwsStack(AwsProcessor):
         result['resourcesByTypeIndex'] = resourcesByTypeIndex;
         return result
         
-    def printStack(self,wrappedStack):
+    def printStack(self,wrappedStack,include=None):
         """Prints the stack"""
         rawStack = wrappedStack['rawStack']
         print "==== Stack {} ====".format(rawStack.name)
         # pprint(wrappedStack)
         print "Status: {} {}".format(rawStack.stack_status,defaultify(rawStack.stack_status_reason,''))
 
-        print "== Recent Events:"
-        count = 0
-        for event in wrappedStack['rawStack'].events.all():
-            pprint( event )
-            count += 1
-            if count > 5:
-                break;
+        if None == include or 'events' in include:
+            print "== events:"
+            count = 0
+            for event in wrappedStack['rawStack'].events.all():
+                pprint( event )
+                count += 1
+                if count > 5:
+                    break;
 
-        print "== Resources:"
         for resourceType, resources in wrappedStack['resourcesByTypeIndex'].items():
             if resourceType in resourceTypeAliases:
                 resourceType = resourceTypeAliases[resourceType];
-            print "  - {}".format(resourceType)            
-            for index, resource in resources.items():
-                print "    {0:3d}: {1:30} {2:20} {3}".format(index,resource.logical_id,resource.resource_status,defaultify(resource.resource_status_reason,''))
+            if None == include or resourceType in include:
+                print "== {}:".format(resourceType) 
+                for index, resource in resources.items():
+                    print "    {0:3d}: {1:30} {2:20} {3}".format(index,resource.logical_id,resource.resource_status,defaultify(resource.resource_status_reason,''))
 
     def do_browse(self,args):
         """Open the current stack in a browser."""
@@ -351,11 +377,13 @@ class AwsStack(AwsProcessor):
         """Print the current stack. print -h for detailed help"""
         parser = CommandArgumentParser("print")
         parser.add_argument('-r','--refresh',dest='refresh',action='store_true',help='refresh view of the current stack')
+        parser.add_argument('-i','--include',dest='include',default=None,nargs='+',help='resource types to include')
         args = vars(parser.parse_args(shlex.split(args)))
 
         if args['refresh']:
             self.do_refresh('')
-        self.printStack(self.wrappedStack)
+
+        self.printStack(self.wrappedStack,args['include'])
         
     def do_resource(self,args):
         """Go to the specified resource. resource -h for detailed help"""
@@ -396,6 +424,9 @@ class AwsStack(AwsProcessor):
             stackSummary = self.wrappedStack['resourcesByTypeName']['AWS::CloudFormation::Stack'][args['stack']]
 
         self.stackResource(stackSummary.stack_name,stackSummary.logical_id)
+
+    def do_stacks(self,args):
+        self.do_print('-r','--stacks')
 
 class AwsRoot(AwsProcessor):
     def __init__(self):
