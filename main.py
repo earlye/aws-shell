@@ -143,7 +143,7 @@ class AwsProcessor(cmd.Cmd):
     def do_mfa(self, args):
         """Enter a 6-digit MFA token. mfa -h for more details"""
         parser = CommandArgumentParser("mfa")
-        parser.add_argument(dest='token',nargs='?',help='MFA token value');
+        parser.add_argument(dest='token',help='MFA token value');
         parser.add_argument("-p","--profile",dest='profile',default='default',help='MFA token value');
         args = vars(parser.parse_args(shlex.split(args)))
 
@@ -224,7 +224,7 @@ class AwsProcessor(cmd.Cmd):
     def do_ssh(self,args):
         """SSH to an instance. ssh -h for detailed help."""
         parser = CommandArgumentParser()
-        parser.add_argument(dest='instance-id',nargs='?',help='instance id of the instance to ssh to')
+        parser.add_argument(dest='instance-id',help='instance id of the instance to ssh to')
         parser.add_argument('-a','--interface-number',dest='interface-number',default='0',help='instance id of the instance to ssh to')
         parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string of the form: {localport}:{host-visible-to-instance}:{remoteport}")
         args = vars(parser.parse_args(shlex.split(args)))
@@ -270,7 +270,7 @@ class AwsAutoScalingGroup(AwsProcessor):
     def do_ssh(self,args):
         """SSH to an instance. ssh -h for detailed help"""
         parser = CommandArgumentParser("ssh")
-        parser.add_argument(dest='instance',nargs='?',help='instance index or name');
+        parser.add_argument(dest='instance',help='instance index or name');
         parser.add_argument('-a','--address-number',default='0',dest='interface-number',help='instance id of the instance to ssh to');
         parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string of the form: {localport}:{host-visible-to-instance}:{remoteport}")
         args = vars(parser.parse_args(shlex.split(args)))
@@ -370,7 +370,7 @@ class AwsStack(AwsProcessor):
     def do_asg(self,args):
         """Go to the specified auto scaling group. asg -h for detailed help"""
         parser = CommandArgumentParser("asg")
-        parser.add_argument(dest='asg',nargs='?',help='asg index or name');
+        parser.add_argument(dest='asg',help='asg index or name');
         args = vars(parser.parse_args(shlex.split(args)))
 
         print "loading auto scaling group {}".format(args['asg'])
@@ -385,7 +385,7 @@ class AwsStack(AwsProcessor):
     def do_stack(self,args):
         """Go to the specified stack. stack -h for detailed help."""
         parser = CommandArgumentParser("stack")
-        parser.add_argument(dest='stack',nargs='?',help='stack index or name');
+        parser.add_argument(dest='stack',help='stack index or name');
         args = vars(parser.parse_args(shlex.split(args)))
 
         print "loading stack {}".format(args['stack'])
@@ -405,7 +405,7 @@ class AwsRoot(AwsProcessor):
     def do_stack(self,args):
         """Go to the specified stack. stack -h for detailed help"""
         parser = CommandArgumentParser("stack")
-        parser.add_argument(dest='stack',nargs='?',help='stack index or name');
+        parser.add_argument(dest='stack',help='stack index or name');
         args = vars(parser.parse_args(shlex.split(args)))
 
         try:
@@ -421,7 +421,7 @@ class AwsRoot(AwsProcessor):
     def do_delete_stack(self,args):
         """Delete specified stack. delete_stack -h for detailed help."""
         parser = CommandArgumentParser("delete_stack")
-        parser.add_argument(dest='stack',nargs='?',help='stack index or name');
+        parser.add_argument(dest='stack',help='stack index or name');
         args = vars(parser.parse_args(shlex.split(args)))
 
         try:
