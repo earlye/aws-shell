@@ -10,15 +10,51 @@ import readline
 import shlex
 import subprocess
 import sys
+import traceback
 
 from run_cmd import run_cmd
 from pprint import pprint
 
-class AwsConnectionFactory:    
-    def __init__(self,credentials=None):
-        self.setCredentials(credentials)
+def readfile(filename):
+    f = open(filename,'r')
+    s = f.read()
+    f.close()
+    return s
 
-    def setCredentials(self,credentials):
+def writefile(filename,contents):
+    f = open(filename,'w')
+    f.write(contents)
+    f.close()
+
+aws_config_dir = os.path.join(os.path.expanduser("~"), ".aws")
+awsConnectionFactory = None
+
+class AwsConnectionFactory:
+    def __init__(self,credentials=None,profile='default'):
+        if None == credentials:
+            credentialsFilename = self.getCredentialsFilename(profile)
+            try:
+                credentials = json.loads(readfile(credentialsFilename))['Credentials']
+            except IOError:
+                print "IOError reading credentials file:{}".format(credentialsFilename)
+                pass
+            except ValueError:
+                print "ValueError reading credentials file:{}".format(credentialsFilename)
+                pass
+        self.setMfaCredentials(credentials,profile)
+
+
+    def getCredentialsFilename(self,profile='default'):
+        credentials_file_name = 'mfa_credentials'
+        if not 'default' == profile:
+            credentials_file_name = "{}_{}".format(profile,'mfa_credentials')
+
+        credentials_file  = os.path.join(aws_config_dir, credentials_file_name)
+        return credentials_file
+    
+    def setMfaCredentials(self,credentials,profile='default'):
+        if not None == credentials:
+            writefile(self.getCredentialsFilename(profile),json.dumps({'Credentials':credentials}))
         self.credentials = credentials
         self.session = None
 
@@ -55,14 +91,14 @@ class AwsConnectionFactory:
     def getEc2Resource(self):
         return self.getSession().resource('ec2')
     
-awsConnectionFactory=AwsConnectionFactory();
+
 
 stackStatusFilter=['CREATE_COMPLETE','CREATE_IN_PROGRESS','ROLLBACK_IN_PROGRESS','ROLLBACK_COMPLETE']
 
 resourceTypeAliases={ 'AWS::AutoScaling::AutoScalingGroup' : 'asg',
                       'AWS::CloudFormation::Stack' : 'stack' }
 
-aws_config_dir = os.path.join(os.path.expanduser("~"), ".aws")
+
 
 mappedKeys = { 'SecretAccessKey' : 'AWS_SECRET_ACCESS_KEY', 'SessionToken': 'AWS_SECURITY_TOKEN', 'AccessKeyId' : 'AWS_ACCESS_KEY_ID' }
 
@@ -84,17 +120,6 @@ def isInt(s):
         return True
     except ValueError:
         return False
-
-def readfile(filename):
-    f = open(filename,'r')
-    s = f.read()
-    f.close()
-    return s
-
-def writefile(filename,contents):
-    f = open(filename,'w')
-    f.write(contents)
-    f.close()
 
 class SilentException(Exception):
     def __init__(self):
@@ -140,6 +165,7 @@ class AwsProcessor(cmd.Cmd):
         except SilentException:
             pass
         except Exception, other:
+            traceback.print_exc()
             print "ERROR: {}".format(other)
         except:
             print "Unexpected error:", sys.exc_info()[0]
@@ -171,8 +197,7 @@ class AwsProcessor(cmd.Cmd):
         output = run_cmd(credentials_command,echo=False) # Throws on non-zero exit :yey:
 
         credentials = json.loads("\n".join(output.stdout))['Credentials']
-        pprint(credentials)
-        awsConnectionFactory.setCredentials(credentials)
+        awsConnectionFactory.setMfaCredentials(credentials)
 
     def do_up(self,args):
         """Go up one level"""
@@ -426,7 +451,7 @@ class AwsStack(AwsProcessor):
         self.stackResource(stackSummary.stack_name,stackSummary.logical_id)
 
     def do_stacks(self,args):
-        self.do_print('-r','--stacks')
+        self.do_print('-r --include stack')
 
 class AwsRoot(AwsProcessor):
     def __init__(self):
@@ -522,6 +547,10 @@ class AwsRoot(AwsProcessor):
         self.stackResource(stackName,logicalId)
 
 def main(argv):
+    parser = CommandArgumentParser()
+    parser.add_argument('-p','--profile',dest='profile',default='default',help='select aws profile');
+    args = vars(parser.parse_args(argv))
+    
     histfile = os.path.join(os.path.expanduser("~"), ".aws_hist")
     try:
         readline.read_history_file(histfile)
@@ -530,8 +559,14 @@ def main(argv):
         pass
     atexit.register(readline.write_history_file, histfile)
 
+    global awsConnectionFactory
+    awsConnectionFactory = AwsConnectionFactory(profile=args['profile'])
     command_prompt = AwsRoot()
+    command_prompt.onecmd("stacks")
     command_prompt.cmdloop()
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    try:
+        main(sys.argv[1:])
+    except SilentException:
+        pass
