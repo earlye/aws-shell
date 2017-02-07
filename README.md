@@ -138,3 +138,6 @@ syntax. Instead, just say `-L {port}`. You can still use the server as
 a tunnel to yet another server, or choose different local/remote port
 numbers with the old syntax though.
 
+* --profile (short: -p) selects a specific AWS profile. This is helpful
+when other processes require that your default profile be one other than
+the one you would like aws-shell to use.
