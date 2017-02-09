@@ -57,6 +57,7 @@ class AwsConnectionFactory:
             writefile(self.getCredentialsFilename(profile),json.dumps({'Credentials':credentials}))
         self.credentials = credentials
         self.session = None
+        self.profile = profile
 
     def getSession(self):
         if self.session == None:
@@ -90,7 +91,9 @@ class AwsConnectionFactory:
 
     def getEc2Resource(self):
         return self.getSession().resource('ec2')
-    
+
+    def getProfile(self):
+        return self.profile
 
 
 stackStatusFilter=['CREATE_COMPLETE','CREATE_IN_PROGRESS','ROLLBACK_IN_PROGRESS','ROLLBACK_COMPLETE']
@@ -173,10 +176,11 @@ class AwsProcessor(cmd.Cmd):
     def load_arn(self,profile):
         arn_file_name = 'mfa_device'
         if not profile == 'default':
-            arn_file_name = "#{}_#{}".format(profile,arn_file_name)
+            arn_file_name = "{}_{}".format(profile,arn_file_name)
 
         arn_file = os.path.join(aws_config_dir, arn_file_name)
 
+        print "arn_file:{} [profile:{}]".format(arn_file,profile)
         if os.access(arn_file,os.R_OK):
             return readfile(arn_file)
         else:
@@ -186,7 +190,7 @@ class AwsProcessor(cmd.Cmd):
         """Enter a 6-digit MFA token. mfa -h for more details"""
         parser = CommandArgumentParser("mfa")
         parser.add_argument(dest='token',help='MFA token value');
-        parser.add_argument("-p","--profile",dest='profile',default='default',help='MFA token value');
+        parser.add_argument("-p","--profile",dest='profile',default=awsConnectionFactory.getProfile(),help='MFA token value');
         args = vars(parser.parse_args(shlex.split(args)))
 
         token = args['token']
@@ -197,7 +201,7 @@ class AwsProcessor(cmd.Cmd):
         output = run_cmd(credentials_command,echo=False) # Throws on non-zero exit :yey:
 
         credentials = json.loads("\n".join(output.stdout))['Credentials']
-        awsConnectionFactory.setMfaCredentials(credentials)
+        awsConnectionFactory.setMfaCredentials(credentials,profile)
 
     def do_up(self,args):
         """Go up one level"""
