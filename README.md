@@ -125,7 +125,10 @@ Obviously, `{host-user}`, `{bastion-identity-path}`,
 have `{bastion-identity-path}` and `{host-identity-path}`
 swapped. Like I said, not an expert on ssh proxying.
 
-## Changes (Most Recent Last)
+## New Features
+
+_Most Recent Last. Doesn't include bug fixes, or any features I forgot
+to list. Maybe that last bit was obvious :-D_
 
 * You can now input an MFA token by running `mfa {token}`. It's
 rudimentary support at this point, and likely broken if you've
