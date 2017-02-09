@@ -12,6 +12,7 @@ import subprocess
 import sys
 import traceback
 
+from botocore.exceptions import ClientError
 from run_cmd import run_cmd
 from pprint import pprint
 
@@ -167,11 +168,30 @@ class AwsProcessor(cmd.Cmd):
                 raise e
         except SilentException:
             pass
+        except ClientError as e:
+            # traceback.print_exc()
+            if e.response['Error']['Code'] == 'AccessDenied':
+                print "ERROR: Access Denied. Maybe you need to run mfa {code}"
+                traceback.print_exc()
         except Exception, other:
             traceback.print_exc()
-            print "ERROR: {}".format(other)
         except:
             print "Unexpected error:", sys.exc_info()[0]
+
+    def mfa_devices(self, profile='default'):
+        list_mfa_devices_command = ["aws","--profile",profile,"--output","json","iam","list-mfa-devices"]
+        result = run_cmd(list_mfa_devices_command)
+        if result.retCode == 0 :
+            return json.loads("\n".join(result.stdout))['MFADevices']
+        else:
+            raise Exception('There was a problem fetching MFA devices from AWS')
+            
+    def load_arn_from_aws(self, profile):
+        devices = self.mfa_devices(profile)
+        if len(devices):
+            return devices[0]['SerialNumber']
+        else:
+            raise Exception('No MFA devices were found for your account')
 
     def load_arn(self,profile):
         arn_file_name = 'mfa_device'
@@ -184,7 +204,9 @@ class AwsProcessor(cmd.Cmd):
         if os.access(arn_file,os.R_OK):
             return readfile(arn_file)
         else:
-            raise Exception("Sorry - I'm lazy and didn't port reading the MFA ARN from aws. Run aws-mfa first.")
+            arn = self.load_arn_from_aws(profile)
+            writefile(arn_file, arn)
+            return arn
 
     def do_mfa(self, args):
         """Enter a 6-digit MFA token. mfa -h for more details"""
@@ -198,7 +220,7 @@ class AwsProcessor(cmd.Cmd):
         arn = self.load_arn(profile)
 
         credentials_command = ["aws","--profile",profile,"--output","json","sts","get-session-token","--serial-number",arn,"--token-code",token]
-        output = run_cmd(credentials_command,echo=False) # Throws on non-zero exit :yey:
+        output = run_cmd(credentials_command) # Throws on non-zero exit :yey:
 
         credentials = json.loads("\n".join(output.stdout))['Credentials']
         awsConnectionFactory.setMfaCredentials(credentials,profile)
@@ -553,6 +575,7 @@ class AwsRoot(AwsProcessor):
 def main(argv):
     parser = CommandArgumentParser()
     parser.add_argument('-p','--profile',dest='profile',default='default',help='select aws profile');
+    parser.add_argument('-m','--mfa',dest='mfa',help='provide mfa code');
     args = vars(parser.parse_args(argv))
     
     histfile = os.path.join(os.path.expanduser("~"), ".aws_hist")
@@ -566,6 +589,8 @@ def main(argv):
     global awsConnectionFactory
     awsConnectionFactory = AwsConnectionFactory(profile=args['profile'])
     command_prompt = AwsRoot()
+    if None != args['mfa']:
+        command_prompt.onecmd("mfa {}".format(args['mfa']))
     command_prompt.onecmd("stacks")
     command_prompt.cmdloop()
 

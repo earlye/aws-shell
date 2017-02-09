@@ -141,6 +141,19 @@ syntax. Instead, just say `-L {port}`. You can still use the server as
 a tunnel to yet another server, or choose different local/remote port
 numbers with the old syntax though.
 
+* When launching, aws-shell automatically runs "stacks" for you.
+
 * --profile (short: -p) selects a specific AWS profile. This is helpful
 when other processes require that your default profile be one other than
 the one you would like aws-shell to use.
+
+* aws-shell now knows how to get your aws device info. I also tried to
+make it file-compatible with aws-mfa, so you should in theory not need
+the separate aws-mfa tool any longer - just use aws-shell to manage your
+.aws/{mfa-related-files}, and you should be good to go. Of course, my
+wife always says she wants to move to Theory, because everything
+works... in Theory.
+
+* --mfa (short: -m) provide your mfa command at launch. If you *know*
+your cached mfa credentials are expired, this saves the step of waiting
+for aws-shell to get access denied.

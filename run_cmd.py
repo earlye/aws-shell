@@ -8,29 +8,29 @@ import sys
 import threading
 
 class RunCmdResult(object):
-    def __init__(self,echo,echoStdErr):
+    def __init__(self,echoStdout,echoStderr):
         self.retCode = 0;
         self.stdout = [];
         self.stderr = [];
-        self.echo = echo;
-        self.echoStdErr = echoStdErr;
+        self.echoStdout = echoStdout;
+        self.echoStderr = echoStderr;
     def addStdOut(self,lines):
         if (len(lines)==0):
             return;
         lines = map(lambda line: line.rstrip('\n'),lines)
-        if (self.echo):
+        if (self.echoStdout):
             print("\n".join(lines), file=sys.stdout)
         self.stdout.extend(lines)
-    def addStdErr(self,lines):
+    def addStderr(self,lines):
         if (len(lines)==0):
             return;
         lines = map(lambda line: line.rstrip('\n'),lines)
-        if (self.echoStdErr):
+        if (self.echoStderr):
             print("\n".join(lines), file=sys.stderr)
         self.stderr.extend(lines)
 
-def run_cmd(args,throwOnNonZero = True,echo=True,echoErr=True):
-    if echo:
+def run_cmd(args,throwOnNonZero = True,echoCommand=True,echoStdout=False,echoStderr=True):
+    if echoCommand:
         print(' '.join(args))
     # set the use show window flag, might make conditional on being in Windows:
     if platform.system() == 'Windows':
@@ -45,7 +45,7 @@ def run_cmd(args,throwOnNonZero = True,echo=True,echoErr=True):
                              stdin=open(os.devnull), # subprocess.PIPE,
                              startupinfo=startupinfo)
 
-    result = RunCmdResult(echo,echoErr);
+    result = RunCmdResult(echoStdout,echoStderr);
 
     class StdoutReaderThread(threading.Thread):
         def __init__(self, stream, result):
@@ -68,7 +68,7 @@ def run_cmd(args,throwOnNonZero = True,echo=True,echoErr=True):
                 lines = self.stream.readlines(1024)
                 if len(lines) == 0:
                     break
-                self.result.addStdErr(lines)
+                self.result.addStderr(lines)
 
     stdOutReader = StdoutReaderThread(p.stdout,result)
     stdOutReader.start()
