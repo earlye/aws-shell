@@ -438,7 +438,7 @@ class AwsRoot(AwsProcessor):
         global stackStatusFilter
         for i in includes:            
             if not i in stackStatusFilter:
-                stackStatusFilter.add(i)
+                stackStatusFilter.append(i)
         for e in excludes:
             stackStatusFilter.remove(e)
 

@@ -157,3 +157,9 @@ works... in Theory.
 * --mfa (short: -m) provide your mfa command at launch. If you *know*
 your cached mfa credentials are expired, this saves the step of waiting
 for aws-shell to get access denied.
+
+* there is now a `profile` command to change profiles after you've 
+started aws-shell.
+
+* `stacks` now adds `-e` and `-i` parameters so you can exclude or
+include new stack states in the filter.
