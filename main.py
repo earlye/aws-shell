@@ -12,118 +12,22 @@ import subprocess
 import sys
 import traceback
 
+from AwsConnectionFactory import AwsConnectionFactory
+
 from botocore.exceptions import ClientError
 from run_cmd import run_cmd
 from pprint import pprint
+from stdplus import *
 
-def readfile(filename):
-    f = open(filename,'r')
-    s = f.read()
-    f.close()
-    return s
-
-def writefile(filename,contents):
-    f = open(filename,'w')
-    f.write(contents)
-    f.close()
-
-aws_config_dir = os.path.join(os.path.expanduser("~"), ".aws")
 awsConnectionFactory = None
 
-class AwsConnectionFactory:
-    def __init__(self,credentials=None,profile='default'):
-        if None == credentials:
-            credentialsFilename = self.getCredentialsFilename(profile)
-            try:
-                credentials = json.loads(readfile(credentialsFilename))['Credentials']
-            except IOError:
-                print "IOError reading credentials file:{}".format(credentialsFilename)
-                pass
-            except ValueError:
-                print "ValueError reading credentials file:{}".format(credentialsFilename)
-                pass
-        self.setMfaCredentials(credentials,profile)
-
-
-    def getCredentialsFilename(self,profile='default'):
-        credentials_file_name = 'mfa_credentials'
-        if not 'default' == profile:
-            credentials_file_name = "{}_{}".format(profile,'mfa_credentials')
-
-        credentials_file  = os.path.join(aws_config_dir, credentials_file_name)
-        return credentials_file
-    
-    def setMfaCredentials(self,credentials,profile='default'):
-        if not None == credentials:
-            writefile(self.getCredentialsFilename(profile),json.dumps({'Credentials':credentials}))
-        self.credentials = credentials
-        self.session = None
-        self.profile = profile
-
-    def getSession(self):
-        if self.session == None:
-            if self.credentials == None:
-                # print("Getting session w/ credentials from env")
-                self.session = boto3.session.Session()
-            else:
-                # print("Getting session w/ credentials:")
-                # pprint(self.credentials)
-                self.session = boto3.session.Session(aws_access_key_id=self.credentials['AccessKeyId'],
-                                                     aws_secret_access_key=self.credentials['SecretAccessKey'],
-                                                     aws_session_token=self.credentials['SessionToken'])
-                # print(self.session)
-        # print "Session obtained"
-        return self.session
-
-    def getAsgClient(self):
-        return self.getSession().client('autoscaling')
-
-    def getAsgResource(self):
-        return self.getSession().resource('autoscaling')
-    
-    def getCfResource(self):
-        return self.getSession().resource('cloudformation')
-
-    def getCfClient(self):
-        return self.getSession().client('cloudformation')
-
-    def getEc2Client(self):
-        return self.getSession().client('ec2')
-
-    def getEc2Resource(self):
-        return self.getSession().resource('ec2')
-
-    def getProfile(self):
-        return self.profile
-
-
-stackStatusFilter=['CREATE_COMPLETE','CREATE_IN_PROGRESS','ROLLBACK_IN_PROGRESS','ROLLBACK_COMPLETE']
+stackStatusFilter=['CREATE_COMPLETE','CREATE_FAILED','CREATE_IN_PROGRESS','ROLLBACK_IN_PROGRESS','ROLLBACK_COMPLETE']
 
 resourceTypeAliases={ 'AWS::AutoScaling::AutoScalingGroup' : 'asg',
                       'AWS::CloudFormation::Stack' : 'stack' }
 
-
-
 mappedKeys = { 'SecretAccessKey' : 'AWS_SECRET_ACCESS_KEY', 'SessionToken': 'AWS_SECURITY_TOKEN', 'AccessKeyId' : 'AWS_ACCESS_KEY_ID' }
 
-def defaultify(value,default):
-    if None == value:
-        return default
-    else:
-        return value
-
-def defaultify_dictentry(dictionary,key,default):
-    if key in dictionary:
-        return defaultify(dictionary[key],default)
-    else:
-        return default
-
-def isInt(s):
-    try:
-        int(s)
-        return True
-    except ValueError:
-        return False
 
 class SilentException(Exception):
     def __init__(self):
@@ -193,21 +97,6 @@ class AwsProcessor(cmd.Cmd):
         else:
             raise Exception('No MFA devices were found for your account')
 
-    def load_arn(self,profile):
-        arn_file_name = 'mfa_device'
-        if not profile == 'default':
-            arn_file_name = "{}_{}".format(profile,arn_file_name)
-
-        arn_file = os.path.join(aws_config_dir, arn_file_name)
-
-        print "arn_file:{} [profile:{}]".format(arn_file,profile)
-        if os.access(arn_file,os.R_OK):
-            return readfile(arn_file)
-        else:
-            arn = self.load_arn_from_aws(profile)
-            writefile(arn_file, arn)
-            return arn
-
     def do_mfa(self, args):
         """Enter a 6-digit MFA token. mfa -h for more details"""
         parser = CommandArgumentParser("mfa")
@@ -217,7 +106,7 @@ class AwsProcessor(cmd.Cmd):
 
         token = args['token']
         profile = args['profile']
-        arn = self.load_arn(profile)
+        arn = awsConnectionFactory.load_arn(profile)
 
         credentials_command = ["aws","--profile",profile,"--output","json","sts","get-session-token","--serial-number",arn,"--token-code",token]
         output = run_cmd(credentials_command) # Throws on non-zero exit :yey:
@@ -237,7 +126,17 @@ class AwsProcessor(cmd.Cmd):
         if None == self.parent:
             print "You're at the root. Try 'quit' to quit"
         else:
-            raise SlashException        
+            raise SlashException
+
+    def do_profile(self,args):
+        """Select AWS profile"""
+        parser = CommandArgumentParser("profile")
+        parser.add_argument(dest="profile",help="Profile name");
+        args = vars(parser.parse_args(shlex.split(args)))
+
+        profile = args['profile']
+        global awsConnectionFactory
+        awsConnectionFactory = AwsConnectionFactory(profile=profile)
 
     def do_quit(self,args):
         """Alias for 'exit'"""
@@ -527,9 +426,21 @@ class AwsRoot(AwsProcessor):
         """List available stacks. stacks -h for detailed help."""
         parser = CommandArgumentParser()
         parser.add_argument('-s','--silent',dest='silent',action='store_true',help='Run silently');
+        parser.add_argument('-i','--include',nargs='*',dest='includes',default=[],help='Add statuses');
+        parser.add_argument('-e','--exclude',nargs='*',dest='excludes',default=[],help='Remove statuses');
         args = vars(parser.parse_args(shlex.split(args)))
 
         nextToken = None
+
+        includes = args['includes']
+        excludes = args['excludes']
+
+        global stackStatusFilter
+        for i in includes:            
+            if not i in stackStatusFilter:
+                stackStatusFilter.add(i)
+        for e in excludes:
+            stackStatusFilter.remove(e)
 
         complete = False;
         stackSummaries = []
@@ -558,7 +469,7 @@ class AwsRoot(AwsProcessor):
         self.stackList = stackSummariesByIndex
         if not args['silent']:
             for index,summary in stackSummariesByIndex.items():
-                print '{0:3d}: {2:20} {1:40} {3}'.format(summary['Index'],summary['StackName'],summary['StackStatus'],defaultify_dictentry(summary,'StackStatusReason',''))
+                print '{0:3d}: {2:20} {1:40} {3}'.format(summary['Index'],summary['StackName'],summary['StackStatus'],defaultifyDict(summary,'StackStatusReason',''))
         
     def do_stack_resource(self, args):
         """Use specified stack resource. stack_resource -h for detailed help."""
@@ -587,8 +498,8 @@ def main(argv):
     atexit.register(readline.write_history_file, histfile)
 
     global awsConnectionFactory
-    awsConnectionFactory = AwsConnectionFactory(profile=args['profile'])
     command_prompt = AwsRoot()
+    command_prompt.onecmd("profile {}".format(args['profile']))
     if None != args['mfa']:
         command_prompt.onecmd("mfa {}".format(args['mfa']))
     command_prompt.onecmd("stacks")
