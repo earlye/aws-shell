@@ -11,6 +11,7 @@ import shlex
 import subprocess
 import sys
 import traceback
+import yaml
 
 from AwsConnectionFactory import AwsConnectionFactory
 
@@ -28,6 +29,14 @@ resourceTypeAliases={ 'AWS::AutoScaling::AutoScalingGroup' : 'asg',
 
 mappedKeys = { 'SecretAccessKey' : 'AWS_SECRET_ACCESS_KEY', 'SessionToken': 'AWS_SECURITY_TOKEN', 'AccessKeyId' : 'AWS_ACCESS_KEY_ID' }
 
+def fexecvp(args):
+    pid = os.fork()
+    if pid == 0:
+        os.execvp(args[0],args)
+        sys.exit(0)
+        return ~0
+    else:
+        return os.waitpid(pid,0)
 
 class SilentException(Exception):
     def __init__(self):
@@ -131,10 +140,14 @@ class AwsProcessor(cmd.Cmd):
     def do_profile(self,args):
         """Select AWS profile"""
         parser = CommandArgumentParser("profile")
-        parser.add_argument(dest="profile",help="Profile name");
+        parser.add_argument(dest="profile",help="Profile name")
+        parser.add_argument('-v','--verbose',dest="verbose",action='store_true',help='verbose')
         args = vars(parser.parse_args(shlex.split(args)))
 
         profile = args['profile']
+        verbose = args['verbose']
+        if verbose:
+            print "Selecting profile '{}'".format(profile)
         global awsConnectionFactory
         awsConnectionFactory = AwsConnectionFactory(profile=profile)
 
@@ -171,7 +184,7 @@ class AwsProcessor(cmd.Cmd):
             print("- resource_type:{}".format(stackResource.resource_type))
             print("- stack_id:{}".format(stackResource.stack_id))
 
-    def ssh(self,instanceId,interfaceNumber,forwarding):
+    def ssh(self,instanceId,interfaceNumber,forwarding,replaceKey):
         client = awsConnectionFactory.getEc2Client()
         response = client.describe_instances(InstanceIds=[instanceId])
         networkInterfaces = response['Reservations'][0]['Instances'][0]['NetworkInterfaces'];
@@ -182,6 +195,11 @@ class AwsProcessor(cmd.Cmd):
                 number += 1
         else:
             address = "{}".format(networkInterfaces[interfaceNumber]['PrivateIpAddress'])
+            if replaceKey:
+                args=["/usr/bin/ssh-keygen","-R",address]
+                print " ".join(args)
+                fexecvp(args)
+                
             args=["/usr/bin/ssh",address]
             if not forwarding == None:                
                 for forwardInfo in forwarding:
@@ -189,12 +207,7 @@ class AwsProcessor(cmd.Cmd):
                         forwardInfo = "{0}:localhost:{0}".format(forwardInfo)
                     args.extend(["-L",forwardInfo])
             print " ".join(args)
-            pid = os.fork()
-            if pid == 0:
-                os.execvp(args[0],args)
-                sys.exit(0)
-            else:
-                os.waitpid(pid,0)
+            fexecvp(args)
             
     def do_ssh(self,args):
         """SSH to an instance. ssh -h for detailed help."""
@@ -202,12 +215,14 @@ class AwsProcessor(cmd.Cmd):
         parser.add_argument(dest='instance-id',help='instance id of the instance to ssh to')
         parser.add_argument('-a','--interface-number',dest='interface-number',default='0',help='instance id of the instance to ssh to')
         parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string: {localport}:{host-visible-to-instance}:{remoteport} or {port}")
+        parser.add_argument('-R','--replace-key',dest='replaceKey',default=False,action='store_true',help="Replace the host's key. This is useful when AWS recycles an IP address you've seen before.")
         args = vars(parser.parse_args(shlex.split(args)))
 
         instanceId = args['instance-id']
         interfaceNumber = int(args['interface-number'])
         forwarding = args['forwarding']
-        self.ssh(instanceId,interfaceNumber, forwarding)
+        replaceKey = args['replaceKey']
+        self.ssh(instanceId,interfaceNumber, forwarding, replaceKey)
 
 class AwsAutoScalingGroup(AwsProcessor):
     def __init__(self,scalingGroup,parent):
@@ -248,17 +263,19 @@ class AwsAutoScalingGroup(AwsProcessor):
         parser.add_argument(dest='instance',help='instance index or name');
         parser.add_argument('-a','--address-number',default='0',dest='interface-number',help='instance id of the instance to ssh to');
         parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string of the form: {localport}:{host-visible-to-instance}:{remoteport} or {port}")
+        parser.add_argument('-R','--replace-key',dest='replaceKey',default=False,action='store_true',help="Replace the host's key. This is useful when AWS recycles an IP address you've seen before.")
         args = vars(parser.parse_args(shlex.split(args)))
 
         interfaceNumber = int(args['interface-number'])
-        forwarding = args['forwarding']                            
+        forwarding = args['forwarding']
+        replaceKey = args['replaceKey']
         try:
             index = int(args['instance'])
             instances = self.scalingGroupDescription['AutoScalingGroups'][0]['Instances']
             instance = instances[index]
-            self.ssh(instance['InstanceId'],interfaceNumber,forwarding)
+            self.ssh(instance['InstanceId'],interfaceNumber,forwarding,replaceKey)
         except ValueError:
-            self.ssh(args['instance'],interfaceNumber,forwarding)
+            self.ssh(args['instance'],interfaceNumber,forwarding,replaceKey)
 
         
         
@@ -484,8 +501,14 @@ class AwsRoot(AwsProcessor):
         self.stackResource(stackName,logicalId)
 
 def main(argv):
+    configFile = os.path.join(os.path.expanduser("~"),".aws-shell.yaml")
+    config={}
+    if os.path.exists(configFile):
+        print "Loading config:{}".format(configFile)
+        config = yaml.load(readfile(configFile))        
+
     parser = CommandArgumentParser()
-    parser.add_argument('-p','--profile',dest='profile',default='default',help='select aws profile');
+    parser.add_argument('-p','--profile',dest='profile',default=defaultifyDict(config,'profile','default'),help='select aws profile');
     parser.add_argument('-m','--mfa',dest='mfa',help='provide mfa code');
     args = vars(parser.parse_args(argv))
     
@@ -497,9 +520,11 @@ def main(argv):
         pass
     atexit.register(readline.write_history_file, histfile)
 
+
+
     global awsConnectionFactory
     command_prompt = AwsRoot()
-    command_prompt.onecmd("profile {}".format(args['profile']))
+    command_prompt.onecmd("profile -v {}".format(args['profile']))
     if None != args['mfa']:
         command_prompt.onecmd("mfa {}".format(args['mfa']))
     command_prompt.onecmd("stacks")

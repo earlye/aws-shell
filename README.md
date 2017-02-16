@@ -163,3 +163,20 @@ started aws-shell.
 
 * `stacks` now adds `-e` and `-i` parameters so you can exclude or
 include new stack states in the filter.
+
+* `~/.aws-shell.yaml` is the new config file. It has one setting for now,
+`profile`. Example:
+
+```
+---
+profile: {aws profile name}
+```
+
+* `ssh` commands now have a `-R`/`--replace-key` option. It is quite
+possible in AWS for IP addresses to get recycled, especially if you 
+are creating/tearing-down cloudformation stacks while iterating on
+their templates. When this happens, you don't want to have to go
+hack on `~/.ssh/known_hosts` in order to ssh in to the host. This option
+will run the appropriate command (`ssh-keygen -R {host}`) to remove
+the entry before running ssh.
+
