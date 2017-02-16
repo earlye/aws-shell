@@ -10,6 +10,8 @@ from stdplus import writefile
 aws_config_dir = os.path.join(os.path.expanduser("~"), ".aws")
 
 class AwsConnectionFactory:
+    instance = None
+    
     def __init__(self,credentials=None,profile='default'):
         if None == credentials:
             credentialsFilename = self.getAwsMfaCredentialsFilename(profile)
@@ -23,6 +25,9 @@ class AwsConnectionFactory:
                 pass
         self.setMfaCredentials(credentials,profile)
 
+    @staticmethod
+    def resetInstance(credentials=None,profile='default'):
+        AwsConnectionFactory.instance = AwsConnectionFactory(credentials,profile)
 
     def getAwsMfaCredentialsFilename(self,profile='default'):
         credentials_file_name = 'mfa_credentials'
@@ -34,7 +39,6 @@ class AwsConnectionFactory:
 
     def getAwsCredentialsFilename(self):
         return os.path.join(aws_config_dir,'credentials')
-
 
     def load_arn(self,profile):
         arn_file_name = 'mfa_device'

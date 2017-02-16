@@ -1,7 +1,8 @@
 from _readfile import readfile
 from _writefile import writefile
+from _fexecvp import fexecvp
 
-__all__ = ['readfile','writefile','defaultify','defaultifyDict','isInt']
+__all__ = ['fexecvp','readfile','writefile','defaultify','defaultifyDict','isInt']
 
 def defaultify(value,default):
     if None == value:
