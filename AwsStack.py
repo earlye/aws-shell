@@ -1,4 +1,5 @@
-from AwsProcessor import AwsProcessor 
+from AwsProcessor import AwsProcessor
+from AwsConnectionFactory import AwsConnectionFactory
 from CommandArgumentParser import CommandArgumentParser
 from stdplus import *
 

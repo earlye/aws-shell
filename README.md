@@ -180,3 +180,4 @@ hack on `~/.ssh/known_hosts` in order to ssh in to the host. This option
 will run the appropriate command (`ssh-keygen -R {host}`) to remove
 the entry before running ssh.
 
+* auto-scaling groups now support the `terminateInstance` command.
