@@ -9,16 +9,20 @@ class AwsAutoScalingGroup(AwsProcessor):
         AwsProcessor.__init__(self,parent.raw_prompt + "/asg:" + scalingGroup,parent)
         self.client = AwsConnectionFactory.instance.getAsgClient()
         self.scalingGroup = scalingGroup
-        self.scalingGroupDescription = self.client.describe_auto_scaling_groups(AutoScalingGroupNames=[self.scalingGroup])
-        self.do_printInstances('')
+        
+        self.do_printInstances('-r')
         
     def do_printInstances(self,args):
         """Print the list of instances in this auto scaling group. printInstances -h for detailed help"""
         parser = CommandArgumentParser("stack")
         parser.add_argument('-a','--addresses',action='store_true',dest='addresses',help='list all ip addresses');
+        parser.add_argument('-r','--refresh',action='store_true',dest='refresh',help='refresh');
         args = vars(parser.parse_args(args))
 
         client = AwsConnectionFactory.instance.getEc2Client()
+
+        if args['refresh']:
+            self.scalingGroupDescription = self.client.describe_auto_scaling_groups(AutoScalingGroupNames=[self.scalingGroup])
         
         print "AutoScaling Group:{}".format(self.scalingGroup)
         print "=== Instances ==="
@@ -53,6 +57,37 @@ class AwsAutoScalingGroup(AwsProcessor):
 
         client = AwsConnectionFactory.instance.getEc2Client()
         client.terminate_instances(InstanceIds=[instanceId['InstanceId']])
+
+    def do_setDesiredCapacity(self,args):
+        """Set the desired capacity"""
+        parser = CommandArgumentParser("setDesiredCapacity")
+        parser.add_argument(dest='value',type=int,help='new value');
+        args = vars(parser.parse_args(args))
+
+        value = int(args['value'])
+        print "Setting desired capacity to {}".format(value)
+        client = AwsConnectionFactory.instance.getAsgClient()
+        client.set_desired_capacity(AutoScalingGroupName=self.scalingGroup,DesiredCapacity=value,HonorCooldown=True)
+        print "Scaling activity in progress"
+
+    def do_updateCapacity(self,args):
+        """Set the desired capacity"""
+        parser = CommandArgumentParser("updateMinMax")
+        parser.add_argument('-m','--min',dest='min',type=int,help='new values');
+        parser.add_argument('-M','--max',dest='max',type=int,help='new values');
+        parser.add_argument('-d','--desired',dest='desired',type=int,help='desired');
+        args = vars(parser.parse_args(args))
+
+        minSize = args['min']
+        maxSize = args['max']
+        desired = args['desired']
+        
+        print "Setting desired capacity to {}-{}, {}".format(minSize,maxSize,desired)
+        client = AwsConnectionFactory.instance.getAsgClient()
+        client.update_auto_scaling_group(AutoScalingGroupName=self.scalingGroup,MinSize=minSize,MaxSize=maxSize,DesiredCapacity=desired)
+        #client.set_desired_capacity(AutoScalingGroupName=self.scalingGroup,DesiredCapacity=value,HonorCooldown=True)
+        print "Scaling activity in progress"
+        
 
     def do_ssh(self,args):
         """SSH to an instance. ssh -h for detailed help"""

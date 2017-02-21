@@ -1,14 +1,17 @@
-from AwsAutoScalingGroup import AwsAutoScalingGroup
-from AwsStack import AwsStack
-from AwsEni import AwsEni
+import AwsAutoScalingGroup
+import AwsStack
+import AwsEni
 
 class AwsProcessorFactoryImpl:
     def AutoScalingGroup(self,scalingGroup,parent):
-        return AwsAutoScalingGroup(scalingGroup,parent);
+        reload(AwsAutoScalingGroup)
+        return AwsAutoScalingGroup.AwsAutoScalingGroup(scalingGroup,parent)
 
     def Eni(self,physicalId,parent):
-        return AwsEni(physicalId,parent)
+        reload(AwsEni)
+        return AwsEni.AwsEni(physicalId,parent)
     
     def Stack(self,stack,logicalName,parent):
-        return AwsStack(stack,logicalName,parent)
+        reload(AwsStack)
+        return AwsStack.AwsStack(stack,logicalName,parent)
     
