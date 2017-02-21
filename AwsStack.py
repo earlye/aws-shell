@@ -1,3 +1,5 @@
+import os;
+
 from AwsProcessor import AwsProcessor
 from AwsConnectionFactory import AwsConnectionFactory
 from CommandArgumentParser import CommandArgumentParser
@@ -5,6 +7,22 @@ from stdplus import *
 
 from pprint import pprint
 
+class WrappedEvent:
+    def __init__(self,event):
+        # pprint(event)
+        self.event = event
+        self.logical_id = event.id
+        self.resource_status = event.logical_resource_id + ":" + event.resource_status
+        self.resource_status_reason = event.resource_status_reason
+
+class WrappedOutput:
+    def __init__(self,output):
+        # pprint(output)
+        self.output = output
+        self.logical_id = output['OutputKey']
+        self.resource_status = output['OutputValue']
+        self.resource_status_reason = output['Description']
+        
 class AwsStack(AwsProcessor):
     def __init__(self,stack,logicalName,parent):
         """Construct an AwsStack command processor"""
@@ -21,6 +39,21 @@ class AwsStack(AwsProcessor):
             if not resource.resource_type in resourcesByType:
                 resourcesByType[resource.resource_type] = {}
             resourcesByType[resource.resource_type][resource.logical_id] = resource;
+
+        events = {}
+        i = 0;
+        for event in stack.events.all():
+            events[i] = WrappedEvent(event)
+            i = i + 1
+        resourcesByType['events'] = events;
+
+        outputs = {}
+        i = 0;
+        for output in stack.outputs:
+            outputs[i] = WrappedOutput(output)
+            i = i + 1
+        resourcesByType['outputs'] = outputs;
+
         result['resourcesByTypeName'] = resourcesByType;
 
         resourcesByTypeIndex = {};
@@ -37,25 +70,23 @@ class AwsStack(AwsProcessor):
         """Prints the stack"""
         rawStack = wrappedStack['rawStack']
         print "==== Stack {} ====".format(rawStack.name)
-        # pprint(wrappedStack)
         print "Status: {} {}".format(rawStack.stack_status,defaultify(rawStack.stack_status_reason,''))
-
-        if None == include or 'events' in include:
-            print "== events:"
-            count = 0
-            for event in wrappedStack['rawStack'].events.all():
-                pprint( event )
-                count += 1
-                if count > 5:
-                    break;
 
         for resourceType, resources in wrappedStack['resourcesByTypeIndex'].items():
             if resourceType in AwsProcessor.resourceTypeAliases:
                 resourceType = AwsProcessor.resourceTypeAliases[resourceType];
             if None == include or resourceType in include:
-                print "== {}:".format(resourceType) 
+                print "== {}:".format(resourceType)
+                logicalIdWidth = 1
+                resourceStatusWidth = 1
+                resourceStatusReasonWidth = 1
                 for index, resource in resources.items():
-                    print "    {0:3d}: {1:30} {2:20} {3}".format(index,resource.logical_id,resource.resource_status,defaultify(resource.resource_status_reason,''))
+                    logicalIdWidth = max(logicalIdWidth,len(resource.logical_id))
+                    resourceStatusWidth = max(resourceStatusWidth,len(resource.resource_status))
+                    resourceStatusReasonWidth = max(resourceStatusReasonWidth,len(defaultify(resource.resource_status_reason,'')))
+                frm = "    {{0:3d}}: {{1:{0}}} {{2:{1}}} {{3}}".format(logicalIdWidth,resourceStatusWidth)
+                for index, resource in resources.items():
+                    print frm.format(index,resource.logical_id,resource.resource_status,defaultify(resource.resource_status_reason,''))
 
     def do_browse(self,args):
         """Open the current stack in a browser."""

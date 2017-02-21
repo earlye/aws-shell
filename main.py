@@ -23,7 +23,7 @@ from run_cmd import run_cmd
 from pprint import pprint
 from stdplus import *
 
-stackStatusFilter=['CREATE_COMPLETE','CREATE_FAILED','CREATE_IN_PROGRESS','ROLLBACK_IN_PROGRESS','ROLLBACK_COMPLETE']
+stackStatusFilter=['CREATE_COMPLETE','CREATE_FAILED','CREATE_IN_PROGRESS','ROLLBACK_IN_PROGRESS','ROLLBACK_COMPLETE','UPDATE_COMPLETE']
 
 
 mappedKeys = { 'SecretAccessKey' : 'AWS_SECRET_ACCESS_KEY', 'SessionToken': 'AWS_SECURITY_TOKEN', 'AccessKeyId' : 'AWS_ACCESS_KEY_ID' }
@@ -53,7 +53,7 @@ class AwsRoot(AwsProcessor):
         except ValueError:
             stack = AwsConnectionFactory.instance.getCfResource().Stack(args['stack'])
 
-        AwsStack(stack,stack.name,self).cmdloop()    
+        AwsProcessor.processorFactory.Stack(stack,stack.name,self).cmdloop()
 
     def do_delete_stack(self,args):
         """Delete specified stack. delete_stack -h for detailed help."""

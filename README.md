@@ -181,3 +181,6 @@ will run the appropriate command (`ssh-keygen -R {host}`) to remove
 the entry before running ssh.
 
 * auto-scaling groups now support the `terminateInstance` command.
+
+* AwsStack now prints stack events and outputs as if they were normal stack
+resources.
