@@ -57,6 +57,7 @@ class AwsAutoScalingGroup(AwsProcessor):
 
         client = AwsConnectionFactory.instance.getEc2Client()
         client.terminate_instances(InstanceIds=[instanceId['InstanceId']])
+        self.do_printInstances("-r")
 
     def do_setDesiredCapacity(self,args):
         """Set the desired capacity"""

@@ -21,7 +21,7 @@ class WrappedOutput:
         self.output = output
         self.logical_id = output['OutputKey']
         self.resource_status = output['OutputValue']
-        self.resource_status_reason = output['Description']
+        self.resource_status_reason = defaultifyDict(output,'Description','')
         
 class AwsStack(AwsProcessor):
     def __init__(self,stack,logicalName,parent):
@@ -29,6 +29,24 @@ class AwsStack(AwsProcessor):
         AwsProcessor.__init__(self,parent.raw_prompt + "/stack:" + logicalName,parent)
         self.wrappedStack = self.wrapStack(stack)
         self.printStack(self.wrappedStack)
+
+    def wrapStackEvents(self,stack):
+        events = {}
+        i = 0;
+        if None != stack.events:
+            for event in stack.events.all():
+                events[i] = WrappedEvent(event)
+                i = i + 1
+        return events;
+
+    def wrapStackOutputs(self,stack):
+        outputs = {}
+        i = 0;
+        if None != stack.outputs:
+            for output in stack.outputs:
+                outputs[i] = WrappedOutput(output)
+                i = i + 1
+        return outputs
 
     def wrapStack(self,stack):
         result = {};
@@ -40,19 +58,8 @@ class AwsStack(AwsProcessor):
                 resourcesByType[resource.resource_type] = {}
             resourcesByType[resource.resource_type][resource.logical_id] = resource;
 
-        events = {}
-        i = 0;
-        for event in stack.events.all():
-            events[i] = WrappedEvent(event)
-            i = i + 1
-        resourcesByType['events'] = events;
-
-        outputs = {}
-        i = 0;
-        for output in stack.outputs:
-            outputs[i] = WrappedOutput(output)
-            i = i + 1
-        resourcesByType['outputs'] = outputs;
+        resourcesByType['events'] = self.wrapStackEvents(stack)
+        resourcesByType['outputs'] = self.wrapStackOutputs(stack)
 
         result['resourcesByTypeName'] = resourcesByType;
 
@@ -66,7 +73,7 @@ class AwsStack(AwsProcessor):
         result['resourcesByTypeIndex'] = resourcesByTypeIndex;
         return result
         
-    def printStack(self,wrappedStack,include=None):
+    def printStack(self,wrappedStack,include=None,filters=["*"]):
         """Prints the stack"""
         rawStack = wrappedStack['rawStack']
         print "==== Stack {} ====".format(rawStack.name)
@@ -75,7 +82,7 @@ class AwsStack(AwsProcessor):
         for resourceType, resources in wrappedStack['resourcesByTypeIndex'].items():
             if resourceType in AwsProcessor.resourceTypeAliases:
                 resourceType = AwsProcessor.resourceTypeAliases[resourceType];
-            if None == include or resourceType in include:
+            if (None == include or resourceType in include) and len(resources):
                 print "== {}:".format(resourceType)
                 logicalIdWidth = 1
                 resourceStatusWidth = 1
@@ -86,7 +93,8 @@ class AwsStack(AwsProcessor):
                     resourceStatusReasonWidth = max(resourceStatusReasonWidth,len(defaultify(resource.resource_status_reason,'')))
                 frm = "    {{0:3d}}: {{1:{0}}} {{2:{1}}} {{3}}".format(logicalIdWidth,resourceStatusWidth)
                 for index, resource in resources.items():
-                    print frm.format(index,resource.logical_id,resource.resource_status,defaultify(resource.resource_status_reason,''))
+                    if fnmatches(resource.logical_id.lower(),filters):
+                        print frm.format(index,resource.logical_id,resource.resource_status,defaultify(resource.resource_status_reason,''))
 
     def do_browse(self,args):
         """Open the current stack in a browser."""
@@ -102,12 +110,13 @@ class AwsStack(AwsProcessor):
         parser = CommandArgumentParser("print")
         parser.add_argument('-r','--refresh',dest='refresh',action='store_true',help='refresh view of the current stack')
         parser.add_argument('-i','--include',dest='include',default=None,nargs='+',help='resource types to include')
+        parser.add_argument(dest='filters',nargs='*',default=["*"],help='Filter stacks');
         args = vars(parser.parse_args(args))
 
         if args['refresh']:
             self.do_refresh('')
 
-        self.printStack(self.wrappedStack,args['include'])
+        self.printStack(self.wrappedStack,args['include'],args['filters'])
         
     def do_resource(self,args):
         """Go to the specified resource. resource -h for detailed help"""
@@ -166,5 +175,6 @@ class AwsStack(AwsProcessor):
         self.stackResource(stackSummary.stack_name,stackSummary.logical_id)
 
     def do_stacks(self,args):
-        self.do_print('-r --include stack')
+        """Same as print -r --include stack"""
+        self.do_print(args + " -r --include stack" )
 

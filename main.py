@@ -4,6 +4,7 @@ import argparse
 import atexit
 import boto3
 import cmd
+
 import json
 import os
 import readline
@@ -19,6 +20,7 @@ from AwsProcessorFactoryImpl import AwsProcessorFactoryImpl
 from CommandArgumentParser import CommandArgumentParser        
 
 from botocore.exceptions import ClientError
+from fnmatch import fnmatch
 from run_cmd import run_cmd
 from pprint import pprint
 from stdplus import *
@@ -33,6 +35,7 @@ from SlashException import SlashException
 
 from AwsAutoScalingGroup import AwsAutoScalingGroup        
 from AwsStack import AwsStack
+
             
 class AwsRoot(AwsProcessor):
     def __init__(self):
@@ -86,12 +89,14 @@ class AwsRoot(AwsProcessor):
         parser.add_argument('-s','--silent',dest='silent',action='store_true',help='Run silently');
         parser.add_argument('-i','--include',nargs='*',dest='includes',default=[],help='Add statuses');
         parser.add_argument('-e','--exclude',nargs='*',dest='excludes',default=[],help='Remove statuses');
+        parser.add_argument(dest='filters',nargs='*',default=["*"],help='Filter stacks');
         args = vars(parser.parse_args(args))
 
         nextToken = None
 
         includes = args['includes']
         excludes = args['excludes']
+        filters = args['filters']
 
         global stackStatusFilter
         for i in includes:            
@@ -116,6 +121,7 @@ class AwsRoot(AwsProcessor):
             if 'StackSummaries' in stacks:
                 stackSummaries.extend(stacks['StackSummaries'])
 
+        stackSummaries = filter( lambda x: fnmatches(x['StackName'],filters),stackSummaries)
         stackSummaries = sorted(stackSummaries, key= lambda entry: entry['StackName'])
         index = 0;
         stackSummariesByIndex = {}

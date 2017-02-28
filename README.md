@@ -184,3 +184,6 @@ the entry before running ssh.
 
 * AwsStack now prints stack events and outputs as if they were normal stack
 resources.
+
+* Added ability to glob when listing stacks. E.g., `stacks *cass*` will list
+all stacks with "cass" as a substring.

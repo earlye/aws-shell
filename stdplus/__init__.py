@@ -1,8 +1,9 @@
 from _readfile import readfile
 from _writefile import writefile
 from _fexecvp import fexecvp
+from _fnmatches import fnmatches
 
-__all__ = ['fexecvp','readfile','writefile','defaultify','defaultifyDict','isInt']
+__all__ = ['fexecvp','readfile','writefile','defaultify','defaultifyDict','isInt','fnmatches']
 
 def defaultify(value,default):
     if None == value:
