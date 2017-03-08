@@ -1,6 +1,6 @@
 from AwsProcessor import AwsProcessor
 from AwsConnectionFactory import AwsConnectionFactory
-from CommandArgumentParser import CommandArgumentParser
+from CommandArgumentParser import *
 
 import boto3
 
@@ -41,9 +41,101 @@ class AwsAutoScalingGroup(AwsProcessor):
                     number +=1                
             index += 1
 
+    def do_rebootInstance(self,args):
+        """Restart specified instance"""
+        parser = CommandArgumentParser("rebootInstance")
+        parser.add_argument(dest='instance',help='instance index or name');
+        args = vars(parser.parse_args(args))
+
+        instanceId = args['instance']
+        force = args['force']
+        try:
+            index = int(instanceId)
+            instances = self.scalingGroupDescription['AutoScalingGroups'][0]['Instances']
+            instanceId = instances[index]
+        except ValueError:
+            pass
+
+        client = AwsConnectionFactory.instance.getEc2Client()
+        client.reboot_instances(InstanceIds=[instanceId['InstanceId']])
+
+        
+    def do_setDesiredCapacity(self,args):
+        """Set the desired capacity"""
+        parser = CommandArgumentParser("setDesiredCapacity")
+        parser.add_argument(dest='value',type=int,help='new value');
+        args = vars(parser.parse_args(args))
+
+        value = int(args['value'])
+        print "Setting desired capacity to {}".format(value)
+        client = AwsConnectionFactory.instance.getAsgClient()
+        client.set_desired_capacity(AutoScalingGroupName=self.scalingGroup,DesiredCapacity=value,HonorCooldown=True)
+        print "Scaling activity in progress"
+
+    def do_ssh(self,args):
+        """SSH to an instance. ssh -h for detailed help"""
+        parser = CommandArgumentParser("ssh")
+        parser.add_argument(dest='instance',help='instance index or name');
+        parser.add_argument('-a','--address-number',default='0',dest='interface-number',help='instance id of the instance to ssh to');
+        parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string of the form: {localport}:{host-visible-to-instance}:{remoteport} or {port}")
+        parser.add_argument('-R','--replace-key',dest='replaceKey',default=False,action='store_true',help="Replace the host's key. This is useful when AWS recycles an IP address you've seen before.")
+        parser.add_argument('-B','--background',dest='background',default=False,action='store_true',help="Run in the background. (e.g., forward an ssh session and then do other stuff in aws-shell).")
+        parser.add_argument('-v',dest='verbosity',default=0,action=VAction,nargs='?',help='Verbosity. The more instances, the more verbose');
+        args = vars(parser.parse_args(args))
+
+        interfaceNumber = int(args['interface-number'])
+        forwarding = args['forwarding']
+        replaceKey = args['replaceKey']
+        background = args['background']
+        verbosity = args['verbosity']
+        try:
+            index = int(args['instance'])
+            instances = self.scalingGroupDescription['AutoScalingGroups'][0]['Instances']
+            instance = instances[index]
+            self.ssh(instance['InstanceId'],interfaceNumber,forwarding,replaceKey,background,verbosity)
+        except ValueError:
+            self.ssh(args['instance'],interfaceNumber,forwarding,replaceKey,background)
+
+    def do_startInstance(self,args):
+        """Start specified instance"""
+        parser = CommandArgumentParser("startInstance")
+        parser.add_argument(dest='instance',help='instance index or name');
+        args = vars(parser.parse_args(args))
+
+        instanceId = args['instance']
+        force = args['force']
+        try:
+            index = int(instanceId)
+            instances = self.scalingGroupDescription['AutoScalingGroups'][0]['Instances']
+            instanceId = instances[index]
+        except ValueError:
+            pass
+
+        client = AwsConnectionFactory.instance.getEc2Client()
+        client.start_instances(InstanceIds=[instanceId['InstanceId']])
+            
+    def do_stopInstance(self,args):
+        """Stop specified instance"""
+        parser = CommandArgumentParser("stopInstance")
+        parser.add_argument(dest='instance',help='instance index or name');
+        parser.add_argument('-f','--force',action='store_true',dest='force',help='instance index or name');
+        args = vars(parser.parse_args(args))
+
+        instanceId = args['instance']
+        force = args['force']
+        try:
+            index = int(instanceId)
+            instances = self.scalingGroupDescription['AutoScalingGroups'][0]['Instances']
+            instanceId = instances[index]
+        except ValueError:
+            pass
+
+        client = AwsConnectionFactory.instance.getEc2Client()
+        client.stop_instances(InstanceIds=[instanceId['InstanceId']],Force=force)
+            
     def do_terminateInstance(self,args):
         """Terminate an EC2 instance"""
-        parser = CommandArgumentParser("ssh")
+        parser = CommandArgumentParser("terminateInstance")
         parser.add_argument(dest='instance',help='instance index or name');
         args = vars(parser.parse_args(args))
 
@@ -58,19 +150,7 @@ class AwsAutoScalingGroup(AwsProcessor):
         client = AwsConnectionFactory.instance.getEc2Client()
         client.terminate_instances(InstanceIds=[instanceId['InstanceId']])
         self.do_printInstances("-r")
-
-    def do_setDesiredCapacity(self,args):
-        """Set the desired capacity"""
-        parser = CommandArgumentParser("setDesiredCapacity")
-        parser.add_argument(dest='value',type=int,help='new value');
-        args = vars(parser.parse_args(args))
-
-        value = int(args['value'])
-        print "Setting desired capacity to {}".format(value)
-        client = AwsConnectionFactory.instance.getAsgClient()
-        client.set_desired_capacity(AutoScalingGroupName=self.scalingGroup,DesiredCapacity=value,HonorCooldown=True)
-        print "Scaling activity in progress"
-
+            
     def do_updateCapacity(self,args):
         """Set the desired capacity"""
         parser = CommandArgumentParser("updateMinMax")
@@ -88,26 +168,4 @@ class AwsAutoScalingGroup(AwsProcessor):
         client.update_auto_scaling_group(AutoScalingGroupName=self.scalingGroup,MinSize=minSize,MaxSize=maxSize,DesiredCapacity=desired)
         #client.set_desired_capacity(AutoScalingGroupName=self.scalingGroup,DesiredCapacity=value,HonorCooldown=True)
         print "Scaling activity in progress"
-        
-
-    def do_ssh(self,args):
-        """SSH to an instance. ssh -h for detailed help"""
-        parser = CommandArgumentParser("ssh")
-        parser.add_argument(dest='instance',help='instance index or name');
-        parser.add_argument('-a','--address-number',default='0',dest='interface-number',help='instance id of the instance to ssh to');
-        parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string of the form: {localport}:{host-visible-to-instance}:{remoteport} or {port}")
-        parser.add_argument('-R','--replace-key',dest='replaceKey',default=False,action='store_true',help="Replace the host's key. This is useful when AWS recycles an IP address you've seen before.")
-        parser.add_argument('-B','--background',dest='background',default=False,action='store_true',help="Run in the background. (e.g., forward an ssh session and then do other stuff in aws-shell).")
-        args = vars(parser.parse_args(args))
-
-        interfaceNumber = int(args['interface-number'])
-        forwarding = args['forwarding']
-        replaceKey = args['replaceKey']
-        background = args['background']
-        try:
-            index = int(args['instance'])
-            instances = self.scalingGroupDescription['AutoScalingGroups'][0]['Instances']
-            instance = instances[index]
-            self.ssh(instance['InstanceId'],interfaceNumber,forwarding,replaceKey,background)
-        except ValueError:
-            self.ssh(args['instance'],interfaceNumber,forwarding,replaceKey,background)
+            

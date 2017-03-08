@@ -154,7 +154,7 @@ class AwsProcessor(cmd.Cmd):
             print("- resource_type:{}".format(stackResource.resource_type))
             print("- stack_id:{}".format(stackResource.stack_id))
 
-    def ssh(self,instanceId,interfaceNumber,forwarding,replaceKey,background):
+    def ssh(self,instanceId,interfaceNumber,forwarding,replaceKey,background,verbosity=0):
         client = AwsConnectionFactory.instance.getEc2Client()
         response = client.describe_instances(InstanceIds=[instanceId])
         networkInterfaces = response['Reservations'][0]['Instances'][0]['NetworkInterfaces'];
@@ -180,6 +180,9 @@ class AwsProcessor(cmd.Cmd):
                     args.extend(["-N","-n"])
             else:
                 background = False # Background is ignored if not forwarding
+
+            if verbosity > 0:
+                args.append("-" + "v" * verbosity)
                 
             print " ".join(args)
             pid = fexecvp(args)
@@ -197,6 +200,7 @@ class AwsProcessor(cmd.Cmd):
         parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string: {localport}:{host-visible-to-instance}:{remoteport} or {port}")
         parser.add_argument('-R','--replace-key',dest='replaceKey',default=False,action='store_true',help="Replace the host's key. This is useful when AWS recycles an IP address you've seen before.")
         parser.add_argument('-B','--background',dest='background',default=False,action='store_true',help="Run in the background. (e.g., forward an ssh session and then do other stuff in aws-shell).")
+        parser.add_argument('-v',dest='verbosity',default=0,action=VAction,nargs='?',help='Verbosity. The more instances, the more verbose');
         args = vars(parser.parse_args(args))
 
         instanceId = args['instance-id']
@@ -204,5 +208,6 @@ class AwsProcessor(cmd.Cmd):
         forwarding = args['forwarding']
         replaceKey = args['replaceKey']
         background = args['background']
-        self.ssh(instanceId,interfaceNumber, forwarding, replaceKey, background)
+        verbosity = args['verbosity']
+        self.ssh(instanceId,interfaceNumber, forwarding, replaceKey, background, verbosity)
 
