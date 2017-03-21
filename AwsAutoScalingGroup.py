@@ -7,7 +7,7 @@ import boto3
 class AwsAutoScalingGroup(AwsProcessor):
     def __init__(self,scalingGroup,parent):
         AwsProcessor.__init__(self,parent.raw_prompt + "/asg:" + scalingGroup,parent)
-        self.client = AwsConnectionFactory.instance.getAsgClient()
+        self.client = AwsConnectionFactory.getAsgClient()
         self.scalingGroup = scalingGroup
         
         self.do_printInstances('-r')
@@ -19,7 +19,7 @@ class AwsAutoScalingGroup(AwsProcessor):
         parser.add_argument('-r','--refresh',action='store_true',dest='refresh',help='refresh');
         args = vars(parser.parse_args(args))
 
-        client = AwsConnectionFactory.instance.getEc2Client()
+        client = AwsConnectionFactory.getEc2Client()
 
         if args['refresh']:
             self.scalingGroupDescription = self.client.describe_auto_scaling_groups(AutoScalingGroupNames=[self.scalingGroup])
@@ -48,7 +48,6 @@ class AwsAutoScalingGroup(AwsProcessor):
         args = vars(parser.parse_args(args))
 
         instanceId = args['instance']
-        force = args['force']
         try:
             index = int(instanceId)
             instances = self.scalingGroupDescription['AutoScalingGroups'][0]['Instances']
@@ -56,7 +55,7 @@ class AwsAutoScalingGroup(AwsProcessor):
         except ValueError:
             pass
 
-        client = AwsConnectionFactory.instance.getEc2Client()
+        client = AwsConnectionFactory.getEc2Client()
         client.reboot_instances(InstanceIds=[instanceId['InstanceId']])
 
         
@@ -68,7 +67,7 @@ class AwsAutoScalingGroup(AwsProcessor):
 
         value = int(args['value'])
         print "Setting desired capacity to {}".format(value)
-        client = AwsConnectionFactory.instance.getAsgClient()
+        client = AwsConnectionFactory.getAsgClient()
         client.set_desired_capacity(AutoScalingGroupName=self.scalingGroup,DesiredCapacity=value,HonorCooldown=True)
         print "Scaling activity in progress"
 
@@ -79,6 +78,7 @@ class AwsAutoScalingGroup(AwsProcessor):
         parser.add_argument('-a','--address-number',default='0',dest='interface-number',help='instance id of the instance to ssh to');
         parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string of the form: {localport}:{host-visible-to-instance}:{remoteport} or {port}")
         parser.add_argument('-R','--replace-key',dest='replaceKey',default=False,action='store_true',help="Replace the host's key. This is useful when AWS recycles an IP address you've seen before.")
+        parser.add_argument('-Y','--keyscan',dest='keyscan',default=False,action='store_true',help="Perform a keyscan to avoid having to say 'yes' for a new host. Implies -R.")
         parser.add_argument('-B','--background',dest='background',default=False,action='store_true',help="Run in the background. (e.g., forward an ssh session and then do other stuff in aws-shell).")
         parser.add_argument('-v',dest='verbosity',default=0,action=VAction,nargs='?',help='Verbosity. The more instances, the more verbose');
         args = vars(parser.parse_args(args))
@@ -86,15 +86,16 @@ class AwsAutoScalingGroup(AwsProcessor):
         interfaceNumber = int(args['interface-number'])
         forwarding = args['forwarding']
         replaceKey = args['replaceKey']
+        keyscan = args['keyscan']
         background = args['background']
         verbosity = args['verbosity']
         try:
             index = int(args['instance'])
             instances = self.scalingGroupDescription['AutoScalingGroups'][0]['Instances']
             instance = instances[index]
-            self.ssh(instance['InstanceId'],interfaceNumber,forwarding,replaceKey,background,verbosity)
+            self.ssh(instance['InstanceId'],interfaceNumber,forwarding,replaceKey,keyscan,background,verbosity)
         except ValueError:
-            self.ssh(args['instance'],interfaceNumber,forwarding,replaceKey,background)
+            self.ssh(args['instance'],interfaceNumber,forwarding,replaceKey,keyscan,background)
 
     def do_startInstance(self,args):
         """Start specified instance"""
@@ -111,7 +112,7 @@ class AwsAutoScalingGroup(AwsProcessor):
         except ValueError:
             pass
 
-        client = AwsConnectionFactory.instance.getEc2Client()
+        client = AwsConnectionFactory.getEc2Client()
         client.start_instances(InstanceIds=[instanceId['InstanceId']])
             
     def do_stopInstance(self,args):
@@ -130,7 +131,7 @@ class AwsAutoScalingGroup(AwsProcessor):
         except ValueError:
             pass
 
-        client = AwsConnectionFactory.instance.getEc2Client()
+        client = AwsConnectionFactory.getEc2Client()
         client.stop_instances(InstanceIds=[instanceId['InstanceId']],Force=force)
             
     def do_terminateInstance(self,args):
@@ -147,7 +148,7 @@ class AwsAutoScalingGroup(AwsProcessor):
         except ValueError:
             pass
 
-        client = AwsConnectionFactory.instance.getEc2Client()
+        client = AwsConnectionFactory.getEc2Client()
         client.terminate_instances(InstanceIds=[instanceId['InstanceId']])
         self.do_printInstances("-r")
             
@@ -164,7 +165,7 @@ class AwsAutoScalingGroup(AwsProcessor):
         desired = args['desired']
         
         print "Setting desired capacity to {}-{}, {}".format(minSize,maxSize,desired)
-        client = AwsConnectionFactory.instance.getAsgClient()
+        client = AwsConnectionFactory.getAsgClient()
         client.update_auto_scaling_group(AutoScalingGroupName=self.scalingGroup,MinSize=minSize,MaxSize=maxSize,DesiredCapacity=desired)
         #client.set_desired_capacity(AutoScalingGroupName=self.scalingGroup,DesiredCapacity=value,HonorCooldown=True)
         print "Scaling activity in progress"

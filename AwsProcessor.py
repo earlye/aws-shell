@@ -2,7 +2,7 @@ from SilentException import SilentException
 from SlashException import SlashException
 
 from AwsConnectionFactory import AwsConnectionFactory
-from CommandArgumentParser import CommandArgumentParser
+from CommandArgumentParser import *
 from stdplus import *
 from run_cmd import run_cmd
 
@@ -154,8 +154,8 @@ class AwsProcessor(cmd.Cmd):
             print("- resource_type:{}".format(stackResource.resource_type))
             print("- stack_id:{}".format(stackResource.stack_id))
 
-    def ssh(self,instanceId,interfaceNumber,forwarding,replaceKey,background,verbosity=0):
-        client = AwsConnectionFactory.instance.getEc2Client()
+    def ssh(self,instanceId,interfaceNumber,forwarding,replaceKey,keyscan,background,verbosity=0):
+        client = AwsConnectionFactory.getEc2Client()
         response = client.describe_instances(InstanceIds=[instanceId])
         networkInterfaces = response['Reservations'][0]['Instances'][0]['NetworkInterfaces'];
         if None == interfaceNumber:
@@ -165,10 +165,14 @@ class AwsProcessor(cmd.Cmd):
                 number += 1
         else:
             address = "{}".format(networkInterfaces[interfaceNumber]['PrivateIpAddress'])
-            if replaceKey:
+            if replaceKey or keyscan:
                 args=["/usr/bin/ssh-keygen","-R",address]
                 print " ".join(args)
                 os.waitpid(fexecvp(args),0)
+
+            if keyscan:
+                # Have to read ~/.ssh/config to see if there's a proxy command :/                
+                config = readSshConfig()
                 
             args=["/usr/bin/ssh",address]
             if not forwarding == None:
@@ -199,6 +203,7 @@ class AwsProcessor(cmd.Cmd):
         parser.add_argument('-a','--interface-number',dest='interface-number',default='0',help='instance id of the instance to ssh to')
         parser.add_argument('-L',dest='forwarding',nargs='*',help="port forwarding string: {localport}:{host-visible-to-instance}:{remoteport} or {port}")
         parser.add_argument('-R','--replace-key',dest='replaceKey',default=False,action='store_true',help="Replace the host's key. This is useful when AWS recycles an IP address you've seen before.")
+        parser.add_argument('-Y','--keyscan',dest='keyscan',default=False,action='store_true',help="Perform a keyscan to avoid having to say 'yes' for a new host. Implies -R.")
         parser.add_argument('-B','--background',dest='background',default=False,action='store_true',help="Run in the background. (e.g., forward an ssh session and then do other stuff in aws-shell).")
         parser.add_argument('-v',dest='verbosity',default=0,action=VAction,nargs='?',help='Verbosity. The more instances, the more verbose');
         args = vars(parser.parse_args(args))
@@ -207,7 +212,8 @@ class AwsProcessor(cmd.Cmd):
         interfaceNumber = int(args['interface-number'])
         forwarding = args['forwarding']
         replaceKey = args['replaceKey']
+        keyscan = args['keyscan']
         background = args['background']
         verbosity = args['verbosity']
-        self.ssh(instanceId,interfaceNumber, forwarding, replaceKey, background, verbosity)
+        self.ssh(instanceId,interfaceNumber, forwarding, replaceKey, keyscan, background, verbosity)
 

@@ -1,9 +1,10 @@
 from _readfile import readfile
+from _readSshConfig import readSshConfig
 from _writefile import writefile
 from _fexecvp import fexecvp
 from _fnmatches import fnmatches
 
-__all__ = ['fexecvp','readfile','writefile','defaultify','defaultifyDict','isInt','fnmatches']
+__all__ = ['fexecvp','readfile','writefile','defaultify','defaultifyDict','isInt','fnmatches','readSshConfig']
 
 def defaultify(value,default):
     if None == value:

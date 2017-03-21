@@ -104,7 +104,11 @@ class AwsConnectionFactory:
         # print "Session obtained"
         return self.session
 
-    def getAsgClient(self):
+    @staticmethod
+    def getAsgClient():
+        return AwsConnectionFactory.instance._getAsgClient()
+    
+    def _getAsgClient(self):
         return self.getSession().client('autoscaling')
 
     def getAsgResource(self):
@@ -116,11 +120,21 @@ class AwsConnectionFactory:
     def getCfClient(self):
         return self.getSession().client('cloudformation')
 
-    def getEc2Client(self):
+    @staticmethod
+    def getEc2Client():
+        return AwsConnectionFactory.instance._getEc2Client()
+    
+    def _getEc2Client(self):
         return self.getSession().client('ec2')
 
     def getEc2Resource(self):
         return self.getSession().resource('ec2')
 
+    def getS3Client(self):
+        return self.getSession().client('s3')
+
+    def getS3Resource(self):
+        return self.getSession().resource('s3')
+    
     def getProfile(self):
         return self.profile
